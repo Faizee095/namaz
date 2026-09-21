@@ -36,7 +36,7 @@ const COPY = {
     companion: 'YOUR DAILY COMPANION', launchSubtitle: 'Prayer times, wherever you are', developed: 'DEVELOPED BY',
     finding: 'Finding your location', preparing: "Preparing today's prayer times", current: 'CURRENT LOCATION',
     unavailable: 'Location unavailable', update: 'UPDATE', chooseCity: 'Choose another city', next: 'NEXT PRAYER',
-    until: 'until prayer time', today: "Today's prayers", done: 'done', remindersOn: 'Reminders enabled',
+    until: 'until prayer time', calculatedStart: 'CALCULATED PRAYER-START TIME', mosqueNote: 'Mosque Azan/Jama’at times may follow a different local schedule.', today: "Today's prayers", done: 'done', remindersOn: 'Reminders enabled',
     remindersOff: 'Get prayer reminders', scheduled: 'Daily notifications are scheduled', neverMiss: 'Never miss a prayer time',
     selectedTimes: 'Prayer times for your selected location', choose: 'Choose a city', anywhere: 'View prayer times anywhere',
     searchPlaceholder: 'Search city or country', useLocation: 'Use this location', quick: 'QUICK LOCATIONS', completed: 'DONE',
@@ -51,7 +51,7 @@ const COPY = {
     companion: 'आपका रोज़ाना साथी', launchSubtitle: 'जहाँ भी हों, नमाज़ का समय', developed: 'द्वारा विकसित',
     finding: 'आपकी लोकेशन खोज रहे हैं', preparing: 'आज के नमाज़ के समय तैयार हो रहे हैं', current: 'वर्तमान लोकेशन',
     unavailable: 'लोकेशन उपलब्ध नहीं', update: 'अपडेट', chooseCity: 'दूसरा शहर चुनें', next: 'अगली नमाज़',
-    until: 'नमाज़ तक बाकी समय', today: 'आज की नमाज़', done: 'पूरी', remindersOn: 'रिमाइंडर चालू हैं',
+    until: 'नमाज़ तक बाकी समय', calculatedStart: 'नमाज़ शुरू होने का हिसाब किया गया समय', mosqueNote: 'मस्जिद का अज़ान/जमाअत समय अलग स्थानीय शेड्यूल हो सकता है।', today: 'आज की नमाज़', done: 'पूरी', remindersOn: 'रिमाइंडर चालू हैं',
     remindersOff: 'नमाज़ के रिमाइंडर पाएं', scheduled: 'रोज़ाना नोटिफिकेशन शेड्यूल हैं', neverMiss: 'कोई नमाज़ न छूटे',
     selectedTimes: 'चुनी गई लोकेशन के नमाज़ के समय', choose: 'शहर चुनें', anywhere: 'कहीं भी नमाज़ का समय देखें',
     searchPlaceholder: 'शहर या देश खोजें', useLocation: 'यह लोकेशन चुनें', quick: 'जल्दी चुनें', completed: 'पूरा',
@@ -64,7 +64,7 @@ const COPY = {
   },
 } as const;
 
-const FALLBACK_COORDINATES = { latitude: 24.8607, longitude: 67.0011 };
+const FALLBACK_COORDINATES = { latitude: 26.1209, longitude: 85.3647 };
 const PRAYER_LABELS = {
   Fajr: { en: 'Fajr', hi: 'फ़ज्र', descriptionEn: 'Dawn', descriptionHi: 'सुबह' },
   Dhuhr: { en: 'Dhuhr', hi: 'ज़ुहर', descriptionEn: 'Noon', descriptionHi: 'दोपहर' },
@@ -147,7 +147,7 @@ async function enablePrayerReminders(prayers: Prayer[], language: Language) {
 
 export default function App() {
   const [coordinates, setCoordinates] = useState(FALLBACK_COORDINATES);
-  const [city, setCity] = useState('Karachi');
+  const [city, setCity] = useState('Muzaffarpur');
   const [remindersOn, setRemindersOn] = useState(false);
   const [now, setNow] = useState(new Date());
   const [locationLoading, setLocationLoading] = useState(true);
@@ -341,12 +341,15 @@ export default function App() {
             <Text style={styles.nextTime}>{formatTime(nextPrayer.time)}</Text>
           </View>
           <Text style={styles.nextName}>{getPrayerLabel(nextPrayer.name, language)}</Text>
+          <Text style={styles.calculatedLabel}>{copy.calculatedStart}</Text>
           <View style={styles.countdownRow}>
             <Text style={styles.countdown}>{countdown}</Text>
             <Text style={styles.countdownLabel}>{copy.until}</Text>
           </View>
           <View style={styles.progressTrack}><View style={styles.progressFill} /></View>
         </View>
+
+        <Text style={styles.mosqueNote}>{copy.mosqueNote}</Text>
 
         <View style={styles.sectionHeading}>
           <Text style={styles.sectionTitle}>{copy.today}</Text>
@@ -483,11 +486,13 @@ const styles = StyleSheet.create({
   nextLabel: { color: '#5d4b24', fontSize: 11, letterSpacing: 1.4, fontWeight: '800' },
   nextTime: { color: '#5d4b24', fontSize: 17, fontWeight: '700' },
   nextName: { color: '#173c37', fontSize: 39, fontWeight: '800', marginTop: 14 },
+  calculatedLabel: { color: '#5d4b24', fontSize: 9, fontWeight: '800', letterSpacing: 0.8, marginTop: 4 },
   countdownRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4 },
   countdown: { color: '#173c37', fontSize: 21, fontWeight: '800' },
   countdownLabel: { color: '#5d4b24', fontSize: 13, marginLeft: 8 },
   progressTrack: { backgroundColor: '#c69d4c', height: 5, borderRadius: 3, marginTop: 22, overflow: 'hidden' },
   progressFill: { width: '42%', height: '100%', backgroundColor: '#173c37', borderRadius: 3 },
+  mosqueNote: { color: '#78968b', fontSize: 11, lineHeight: 16, marginTop: 10 },
   sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 30, marginBottom: 13 },
   sectionTitle: { color: '#f5f1e6', fontSize: 20, fontWeight: '700' },
   progressLabel: { color: '#f4c96d', fontSize: 11, fontWeight: '700' },
