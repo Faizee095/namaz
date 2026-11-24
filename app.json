@@ -23,7 +23,9 @@
           "locationWhenInUsePermission": "Allow Azan to use your location to calculate prayer times."
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-asset",
+      "expo-audio"
     ],
     "ios": {
       "supportsTablet": true

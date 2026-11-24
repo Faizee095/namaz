@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import Constants, { AppOwnership } from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
@@ -11,13 +12,13 @@ import {
   Modal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -70,7 +71,9 @@ const COPY = {
 const FALLBACK_COORDINATES = { latitude: 26.1209, longitude: 85.3647 };
 const REMINDERS_STORAGE_KEY = 'azan-reminders-enabled';
 const NOTIFICATION_CHANNEL_ID = 'azan-reminders-v3';
+const REMINDER_DATA_KEY = 'azanReminder';
 const REMINDER_DAYS_AHEAD = 8;
+const notificationSound = Constants.appOwnership === AppOwnership.Expo ? 'default' : 'azan.mp3';
 const PRAYER_LABELS = {
   Fajr: { en: 'Fajr', hi: 'फ़ज्र', descriptionEn: 'Dawn', descriptionHi: 'सुबह' },
   Dhuhr: { en: 'Dhuhr', hi: 'ज़ुहर', descriptionEn: 'Noon', descriptionHi: 'दोपहर' },
@@ -128,7 +131,7 @@ async function ensureNotificationChannel() {
   const channel: Notifications.NotificationChannelInput = {
     name: 'Prayer reminders',
     importance: Notifications.AndroidImportance.MAX,
-    sound: 'azan.mp3',
+    sound: notificationSound,
     vibrationPattern: [0, 250, 250, 250],
     enableVibrate: true,
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
@@ -177,7 +180,7 @@ async function enablePrayerReminders(
       return false;
     }
 
-    await Notifications.cancelAllScheduledNotificationsAsync();
+    await cancelPrayerReminders();
 
     const now = Date.now();
     let scheduled = 0;
@@ -193,9 +196,9 @@ async function enablePrayerReminders(
           content: {
             title: copy.prayerTitle(getPrayerLabel(prayer.name, language)),
             body: copy.prayerBody(getPrayerLabel(prayer.name, language)),
-            sound: 'azan.mp3',
+            sound: notificationSound,
             priority: Notifications.AndroidNotificationPriority.MAX,
-            data: { prayer: prayer.name },
+            data: { prayer: prayer.name, [REMINDER_DATA_KEY]: true },
           },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -221,6 +224,15 @@ async function enablePrayerReminders(
     }
     return false;
   }
+}
+
+async function cancelPrayerReminders() {
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  await Promise.all(
+    scheduled
+      .filter((notification) => notification.content.data?.[REMINDER_DATA_KEY] === true)
+      .map((notification) => Notifications.cancelScheduledNotificationAsync(notification.identifier)),
+  );
 }
 
 export default function App() {
@@ -333,6 +345,8 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
+    if (initialLocationLoading) return () => { cancelled = true; };
+
     AsyncStorage.getItem(REMINDERS_STORAGE_KEY).then(async (saved) => {
       if (cancelled || saved !== 'true') return;
       setRemindersOn(true);
@@ -344,11 +358,11 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [coordinates.latitude, coordinates.longitude, language, todayKey]);
+  }, [coordinates.latitude, coordinates.longitude, language, todayKey, initialLocationLoading]);
 
   async function toggleReminders() {
     if (remindersOn) {
-      await Notifications.cancelAllScheduledNotificationsAsync();
+      await cancelPrayerReminders();
       await AsyncStorage.setItem(REMINDERS_STORAGE_KEY, 'false');
       setRemindersOn(false);
       return;
@@ -374,8 +388,8 @@ export default function App() {
       <SafeAreaView style={styles.launchScreen}>
         <StatusBar style="light" />
         <Image
-          accessibilityLabel="Liverpool Football Club crest"
-          source={{ uri: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0c/Liverpool_FC.svg/1200px-Liverpool_FC.svg.png' }}
+          accessibilityLabel="Azan app icon"
+          source={require('./assets/icon.png')}
           style={styles.launchLogo}
         />
         <Text style={styles.launchTitle}>Azan</Text>
@@ -488,8 +502,8 @@ export default function App() {
         <Text style={styles.footer}>{copy.selectedTimes}</Text>
         <View style={styles.creditFooter}>
           <Image
-            accessibilityLabel="Liverpool Football Club crest"
-            source={{ uri: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0c/Liverpool_FC.svg/1200px-Liverpool_FC.svg.png' }}
+            accessibilityLabel="Azan app icon"
+            source={require('./assets/icon.png')}
             style={styles.clubLogo}
           />
           <Text style={styles.creditText}>Developed by MD Faiyazuddin</Text>
