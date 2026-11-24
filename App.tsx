@@ -74,6 +74,9 @@ const COPY = {
     shareTimetable: 'Share timetable',
     previousMonth: 'Previous month',
     nextMonth: 'Next month',
+    weeklyProgress: 'Prayer progress · last 7 days',
+    weeklyProgressCount: (count: number, total: number) => `${count} of ${total} prayers completed`,
+    fullPrayerDays: (count: number) => `${count} full days`,
     companion: 'YOUR DAILY COMPANION', launchSubtitle: 'Prayer times, wherever you are', developed: 'DEVELOPED BY',
     finding: 'Finding your location', preparing: "Preparing today's prayer times", current: 'CURRENT LOCATION',
     unavailable: 'Location unavailable', update: 'UPDATE', chooseCity: 'Choose another city', next: 'NEXT PRAYER',
@@ -114,6 +117,9 @@ const COPY = {
     shareTimetable: 'समय साझा करें',
     previousMonth: 'पिछला महीना',
     nextMonth: 'अगला महीना',
+    weeklyProgress: 'पिछले 7 दिनों की नमाज़ प्रगति',
+    weeklyProgressCount: (count: number, total: number) => `${count} / ${total} नमाज़ पूरी`,
+    fullPrayerDays: (count: number) => `${count} पूरे दिन`,
     qibla: 'क़िबला दिशा',
     qiblaBearingLabel: 'उत्तर से दिशा',
     qiblaCompassHint: 'फ़ोन का ऊपरी हिस्सा तीर की दिशा में रखें',
@@ -428,6 +434,7 @@ export default function App() {
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
   const [completedPrayers, setCompletedPrayers] = useState<CompletedPrayers>({});
+  const [prayerHistory, setPrayerHistory] = useState<Record<string, CompletedPrayers>>({});
   const [showCompletionMessage, setShowCompletionMessage] = useState(false);
   const [showLaunchScreen, setShowLaunchScreen] = useState(true);
   const [language, setLanguage] = useState<Language>('en');
@@ -603,6 +610,35 @@ export default function App() {
   }, []);
 
   const todayKey = getLocalDateKey(now);
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getAllKeys().then(async (keys) => {
+      const trackerKeys = keys.filter((key) => key.startsWith('azan-prayer-tracker-'));
+      if (trackerKeys.length === 0) return;
+      const entries = await AsyncStorage.multiGet(trackerKeys);
+      const history: Record<string, CompletedPrayers> = {};
+      for (const [key, value] of entries) {
+        if (!value) continue;
+        try {
+          const parsed = JSON.parse(value) as CompletedPrayers;
+          history[key.slice('azan-prayer-tracker-'.length)] = parsed;
+        } catch {
+          // Ignore malformed saved days and keep valid history available.
+        }
+      }
+      if (!cancelled) setPrayerHistory(history);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const weeklyProgress = useMemo(() => Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - index), 12);
+    const key = getLocalDateKey(date);
+    const completedCount = Object.values(prayerHistory[key] ?? {}).filter(Boolean).length;
+    return { date, key, completedCount };
+  }), [now, prayerHistory]);
+  const weeklyCompletedCount = weeklyProgress.reduce((total, day) => total + day.completedCount, 0);
+  const fullPrayerDays = weeklyProgress.filter((day) => day.completedCount === PRAYER_NAMES.length).length;
   const prayers = useMemo(() => {
     const [year, month, day] = todayKey.split('-').map(Number);
     return getPrayers(coordinates.latitude, coordinates.longitude, new Date(year, month - 1, day, 12), prayerTimeAdjustments);
@@ -748,7 +784,9 @@ export default function App() {
   async function togglePrayerCompleted(prayerName: string) {
     const updated = { ...completedPrayers, [prayerName]: !completedPrayers[prayerName] };
     setCompletedPrayers(updated);
-    await AsyncStorage.setItem(`azan-prayer-tracker-${getLocalDateKey(now)}`, JSON.stringify(updated));
+    const key = getLocalDateKey(now);
+    setPrayerHistory((history) => ({ ...history, [key]: updated }));
+    await AsyncStorage.setItem(`azan-prayer-tracker-${key}`, JSON.stringify(updated));
     if (prayers.every((prayer) => updated[prayer.name])) {
       setShowCompletionMessage(true);
     }
@@ -921,6 +959,25 @@ export default function App() {
               </View>
             );
           })}
+        </View>
+
+        <View style={styles.weeklyProgressCard}>
+          <View style={styles.weeklyProgressHeader}>
+            <Text style={styles.weeklyProgressTitle}>{copy.weeklyProgress}</Text>
+            <Text style={styles.weeklyProgressCount}>{copy.weeklyProgressCount(weeklyCompletedCount, 35)}</Text>
+          </View>
+          <View style={styles.weeklyProgressDays}>
+            {weeklyProgress.map((day) => (
+              <View key={day.key} style={styles.weeklyProgressDay}>
+                <Text style={styles.weeklyProgressDayLabel}>{day.date.toLocaleDateString(language === 'hi' ? 'hi-IN' : 'en', { weekday: 'short' })}</Text>
+                <View style={styles.weeklyProgressTrack}>
+                  <View style={[styles.weeklyProgressFill, { height: `${(day.completedCount / PRAYER_NAMES.length) * 100}%` }]} />
+                </View>
+                <Text style={styles.weeklyProgressDayCount}>{day.completedCount}/5</Text>
+              </View>
+            ))}
+          </View>
+          <Text style={styles.weeklyProgressFooter}>{copy.fullPrayerDays(fullPrayerDays)}</Text>
         </View>
 
         <View style={styles.mosqueScheduleCard}>
@@ -1209,6 +1266,17 @@ const styles = StyleSheet.create({
   monthlyTimetableButton: { backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 12, minHeight: 46, paddingHorizontal: 15, marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   monthlyTimetableButtonText: { color: '#f4c96d', fontSize: 13, fontWeight: '700' },
   monthlyTimetableArrow: { color: '#f4c96d', fontSize: 23, lineHeight: 24 },
+  weeklyProgressCard: { backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 16, padding: 15, marginTop: 14 },
+  weeklyProgressHeader: { gap: 4 },
+  weeklyProgressTitle: { color: '#f5f1e6', fontSize: 14, fontWeight: '700' },
+  weeklyProgressCount: { color: '#9bb5a7', fontSize: 11 },
+  weeklyProgressDays: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16 },
+  weeklyProgressDay: { flex: 1, alignItems: 'center', gap: 5 },
+  weeklyProgressDayLabel: { color: '#9bb5a7', fontSize: 9, fontWeight: '600' },
+  weeklyProgressTrack: { height: 44, width: 14, borderRadius: 7, backgroundColor: '#284945', justifyContent: 'flex-end', overflow: 'hidden' },
+  weeklyProgressFill: { width: '100%', borderRadius: 7, backgroundColor: '#e2b65e' },
+  weeklyProgressDayCount: { color: '#dbe6dc', fontSize: 9, fontWeight: '700' },
+  weeklyProgressFooter: { color: '#f4c96d', fontSize: 11, fontWeight: '700', marginTop: 12, textAlign: 'right' },
   monthlyModal: { backgroundColor: '#173c37', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '90%', paddingHorizontal: 16, paddingTop: 22, paddingBottom: 20 },
   monthSelector: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   monthNavButton: { width: 42, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#244a43' },
