@@ -954,7 +954,7 @@ export default function App() {
         <StatusBar style="light" />
         <Image
           accessibilityLabel="Azan app icon"
-          source={require('./assets/icon.png')}
+          source={require('./assets/icon-v2.png')}
           style={styles.launchLogo}
         />
         <Text style={styles.launchTitle}>Azan</Text>
@@ -1203,7 +1203,7 @@ export default function App() {
         <View style={styles.creditFooter}>
           <Image
             accessibilityLabel="Azan app icon"
-            source={require('./assets/icon.png')}
+            source={require('./assets/icon-v2.png')}
             style={styles.clubLogo}
           />
           <Text style={styles.creditText}>Developed by MD Faiyazuddin</Text>

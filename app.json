@@ -4,7 +4,7 @@
     "slug": "Azan",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon-v2.png",
     "userInterfaceStyle": "light",
     "plugins": [
       [
@@ -33,9 +33,8 @@
     "android": {
       "package": "com.faiyazuddin.azan",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
+        "backgroundColor": "#102c2b",
+        "foregroundImage": "./assets/android-icon-foreground-v2.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
@@ -50,7 +49,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/icon-v2.png"
     },
     "extra": {
       "eas": {
