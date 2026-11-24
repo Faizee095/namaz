@@ -8,6 +8,7 @@ import { CalculationMethod, Coordinates, Madhab, PrayerTimes } from 'adhan';
 import {
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
   Image,
   Modal,
   Platform,
@@ -34,6 +35,7 @@ type Prayer = { name: PrayerName; arabic: string; time: Date; endTime: Date; ico
 type CompletedPrayers = Record<string, boolean>;
 type PrayerReminderPreferences = Record<PrayerName, boolean>;
 type PrayerTimeAdjustments = Record<PrayerName, number>;
+type MosqueSchedule = { mosqueName: string; times: Record<PrayerName, string> };
 type Language = 'en' | 'hi';
 
 const COPY = {
@@ -54,6 +56,18 @@ const COPY = {
     invalidAdjustment: 'That change would make a prayer window overlap its next boundary. Choose a smaller adjustment.',
     decreaseAdjustmentLabel: (name: string) => `Decrease ${name} adjustment by one minute`,
     increaseAdjustmentLabel: (name: string) => `Increase ${name} adjustment by one minute`,
+    mosqueSchedule: 'LOCAL JAMA’AT SCHEDULE',
+    editMosqueSchedule: 'Set mosque times',
+    editSchedule: 'Edit schedule',
+    mosqueScheduleHint: 'Add the congregation times used at your local mosque.',
+    calculatedTimesNote: 'These are mosque Jama’at times; calculated prayer times and reminders stay separate.',
+    mosqueName: 'Mosque name',
+    jamaatTimes: 'Jama’at times',
+    time24HourHint: 'Enter times in 24-hour format (HH:MM).',
+    invalidMosqueTime: 'Enter each time as HH:MM, from 00:00 to 23:59.',
+    clearMosqueSchedule: 'Clear mosque schedule',
+    notSet: 'Not set',
+    save: 'Save',
     companion: 'YOUR DAILY COMPANION', launchSubtitle: 'Prayer times, wherever you are', developed: 'DEVELOPED BY',
     finding: 'Finding your location', preparing: "Preparing today's prayer times", current: 'CURRENT LOCATION',
     unavailable: 'Location unavailable', update: 'UPDATE', chooseCity: 'Choose another city', next: 'NEXT PRAYER',
@@ -78,6 +92,18 @@ const COPY = {
     invalidAdjustment: 'इस बदलाव से नमाज़ के समय की सीमा आगे की नमाज़ से टकराएगी। कम बदलाव चुनें।',
     decreaseAdjustmentLabel: (name: string) => `${name} का समय एक मिनट घटाएँ`,
     increaseAdjustmentLabel: (name: string) => `${name} का समय एक मिनट बढ़ाएँ`,
+    mosqueSchedule: 'स्थानीय जमाअत का समय',
+    editMosqueSchedule: 'मस्जिद का समय जोड़ें',
+    editSchedule: 'समय बदलें',
+    mosqueScheduleHint: 'अपनी स्थानीय मस्जिद के जमाअत का समय जोड़ें।',
+    calculatedTimesNote: 'ये मस्जिद के जमाअत के समय हैं; हिसाब किए गए नमाज़ के समय और रिमाइंडर अलग रहेंगे।',
+    mosqueName: 'मस्जिद का नाम',
+    jamaatTimes: 'जमाअत का समय',
+    time24HourHint: 'समय 24 घंटे के प्रारूप में लिखें (HH:MM)।',
+    invalidMosqueTime: 'हर समय HH:MM में लिखें, 00:00 से 23:59 तक।',
+    clearMosqueSchedule: 'मस्जिद का समय हटाएँ',
+    notSet: 'नहीं दिया गया',
+    save: 'सहेजें',
     qibla: 'क़िबला दिशा',
     qiblaBearingLabel: 'उत्तर से दिशा',
     qiblaCompassHint: 'फ़ोन का ऊपरी हिस्सा तीर की दिशा में रखें',
@@ -107,6 +133,7 @@ const FALLBACK_COORDINATES = { latitude: 26.1209, longitude: 85.3647 };
 const REMINDERS_STORAGE_KEY = 'azan-reminders-enabled';
 const PRAYER_REMINDERS_STORAGE_KEY = 'azan-prayer-reminder-preferences';
 const PRAYER_TIME_ADJUSTMENTS_STORAGE_KEY = 'azan-prayer-time-adjustments';
+const MOSQUE_SCHEDULE_STORAGE_KEY = 'azan-mosque-jamaat-schedule';
 const NOTIFICATION_CHANNEL_ID = 'azan-reminders-v3';
 const REMINDER_DATA_KEY = 'azanReminder';
 const REMINDER_DAYS_AHEAD = 8;
@@ -125,6 +152,10 @@ const DEFAULT_PRAYER_TIME_ADJUSTMENTS: PrayerTimeAdjustments = {
   Asr: 0,
   Maghrib: 0,
   Isha: 0,
+};
+const EMPTY_MOSQUE_SCHEDULE: MosqueSchedule = {
+  mosqueName: '',
+  times: { Fajr: '', Dhuhr: '', Asr: '', Maghrib: '', Isha: '' },
 };
 const MAX_PRAYER_TIME_ADJUSTMENT_MINUTES = 30;
 const notificationSound = Constants.appOwnership === AppOwnership.Expo ? 'default' : 'azan.mp3';
@@ -148,6 +179,16 @@ function getPrayerDescription(name: string, language: Language) {
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function normalizeClockTime(value: string) {
+  const match = /^(0?[0-9]|1[0-9]|2[0-3]):([0-5][0-9])$/.exec(value.trim());
+  return match ? `${match[1].padStart(2, '0')}:${match[2]}` : null;
+}
+
+function formatClockTime(value: string) {
+  const [hours, minutes] = value.split(':').map(Number);
+  return formatTime(new Date(2000, 0, 1, hours, minutes));
 }
 
 function getQiblaBearing(latitude: number, longitude: number) {
@@ -364,6 +405,9 @@ export default function App() {
   const [timeAdjustmentsOpen, setTimeAdjustmentsOpen] = useState(false);
   const [locationQuery, setLocationQuery] = useState('');
   const [searchingLocation, setSearchingLocation] = useState(false);
+  const [mosqueSchedule, setMosqueSchedule] = useState(EMPTY_MOSQUE_SCHEDULE);
+  const [mosqueScheduleDraft, setMosqueScheduleDraft] = useState(EMPTY_MOSQUE_SCHEDULE);
+  const [mosqueScheduleOpen, setMosqueScheduleOpen] = useState(false);
   const [completedPrayers, setCompletedPrayers] = useState<CompletedPrayers>({});
   const [showCompletionMessage, setShowCompletionMessage] = useState(false);
   const [showLaunchScreen, setShowLaunchScreen] = useState(true);
@@ -396,6 +440,31 @@ export default function App() {
       if (!cancelled) setPrayerTimeAdjustments(DEFAULT_PRAYER_TIME_ADJUSTMENTS);
     }).finally(() => {
       if (!cancelled) setPrayerTimeAdjustmentsLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(MOSQUE_SCHEDULE_STORAGE_KEY).then((saved) => {
+      if (!saved) return;
+      const parsed = JSON.parse(saved) as Partial<MosqueSchedule>;
+      const times = Object.fromEntries(
+        PRAYER_NAMES.map((name) => {
+          const value = parsed.times?.[name];
+          return [name, typeof value === 'string' && normalizeClockTime(value) ? normalizeClockTime(value) : ''];
+        }),
+      ) as Record<PrayerName, string>;
+      if (!cancelled) {
+        const loaded = { mosqueName: typeof parsed.mosqueName === 'string' ? parsed.mosqueName : '', times };
+        setMosqueSchedule(loaded);
+        setMosqueScheduleDraft(loaded);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setMosqueSchedule(EMPTY_MOSQUE_SCHEDULE);
+        setMosqueScheduleDraft(EMPTY_MOSQUE_SCHEDULE);
+      }
     });
     return () => { cancelled = true; };
   }, []);
@@ -601,6 +670,39 @@ export default function App() {
     await AsyncStorage.setItem(PRAYER_TIME_ADJUSTMENTS_STORAGE_KEY, JSON.stringify(DEFAULT_PRAYER_TIME_ADJUSTMENTS));
   }
 
+  function openMosqueScheduleEditor() {
+    setMosqueScheduleDraft({ mosqueName: mosqueSchedule.mosqueName, times: { ...mosqueSchedule.times } });
+    setMosqueScheduleOpen(true);
+  }
+
+  async function saveMosqueSchedule() {
+    let hasInvalidTime = false;
+    const times = Object.fromEntries(PRAYER_NAMES.map((name) => {
+      const value = mosqueScheduleDraft.times[name].trim();
+      if (!value) return [name, ''];
+      const normalized = normalizeClockTime(value);
+      if (!normalized) hasInvalidTime = true;
+      return [name, normalized ?? value];
+    })) as Record<PrayerName, string>;
+
+    if (hasInvalidTime) {
+      Alert.alert(copy.mosqueSchedule, copy.invalidMosqueTime);
+      return;
+    }
+
+    const updated = { mosqueName: mosqueScheduleDraft.mosqueName.trim(), times };
+    setMosqueSchedule(updated);
+    await AsyncStorage.setItem(MOSQUE_SCHEDULE_STORAGE_KEY, JSON.stringify(updated));
+    setMosqueScheduleOpen(false);
+  }
+
+  async function clearMosqueSchedule() {
+    setMosqueSchedule(EMPTY_MOSQUE_SCHEDULE);
+    setMosqueScheduleDraft(EMPTY_MOSQUE_SCHEDULE);
+    await AsyncStorage.removeItem(MOSQUE_SCHEDULE_STORAGE_KEY);
+    setMosqueScheduleOpen(false);
+  }
+
   async function togglePrayerCompleted(prayerName: string) {
     const updated = { ...completedPrayers, [prayerName]: !completedPrayers[prayerName] };
     setCompletedPrayers(updated);
@@ -767,6 +869,31 @@ export default function App() {
           })}
         </View>
 
+        <View style={styles.mosqueScheduleCard}>
+          <View style={styles.mosqueScheduleHeader}>
+            <View style={styles.mosqueScheduleHeading}>
+              <Text style={styles.mosqueScheduleTitle}>{copy.mosqueSchedule}</Text>
+              {mosqueSchedule.mosqueName ? <Text style={styles.mosqueScheduleName}>{mosqueSchedule.mosqueName}</Text> : null}
+            </View>
+            <Pressable accessibilityRole="button" onPress={openMosqueScheduleEditor} style={styles.mosqueScheduleEditButton}>
+              <Text style={styles.mosqueScheduleEditText}>{mosqueSchedule.mosqueName || PRAYER_NAMES.some((name) => mosqueSchedule.times[name]) ? copy.editSchedule : copy.editMosqueSchedule}</Text>
+            </Pressable>
+          </View>
+          {PRAYER_NAMES.some((name) => mosqueSchedule.times[name]) ? (
+            <View style={styles.mosqueScheduleRows}>
+              {PRAYER_NAMES.map((name) => (
+                <View key={name} style={styles.mosqueScheduleRow}>
+                  <Text style={styles.mosquePrayerName}>{getPrayerLabel(name, language)}</Text>
+                  <Text style={styles.mosquePrayerTime}>{mosqueSchedule.times[name] ? formatClockTime(mosqueSchedule.times[name]) : copy.notSet}</Text>
+                </View>
+              ))}
+              <Text style={styles.mosqueScheduleNote}>{copy.calculatedTimesNote}</Text>
+            </View>
+          ) : (
+            <Text style={styles.mosqueScheduleHint}>{copy.mosqueScheduleHint}</Text>
+          )}
+        </View>
+
         <Pressable style={[styles.reminderButton, remindersOn && styles.reminderOn]} onPress={toggleReminders}>
           <Text style={styles.bell}>{remindersOn ? 'ON' : 'OFF'}</Text>
           <View style={styles.reminderCopy}><Text style={styles.reminderTitle}>{remindersOn ? copy.remindersOn : copy.remindersOff}</Text><Text style={styles.reminderSub}>{remindersOn ? (hasSelectedPrayerReminders ? copy.scheduled : copy.noPrayerRemindersSelected) : copy.neverMiss}</Text></View>
@@ -783,6 +910,64 @@ export default function App() {
           <Text style={styles.creditText}>Developed by MD Faiyazuddin</Text>
         </View>
       </ScrollView>
+      <Modal visible={mosqueScheduleOpen} transparent animationType="slide" onRequestClose={() => setMosqueScheduleOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView style={styles.keyboardAvoiding} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <View style={styles.mosqueEditorModal}>
+              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.mosqueEditorContent}>
+                <View style={styles.modalHeader}>
+                  <View style={styles.adjustmentsHeaderCopy}>
+                    <Text style={styles.modalTitle}>{copy.mosqueSchedule}</Text>
+                    <Text style={styles.modalSubtitle}>{copy.calculatedTimesNote}</Text>
+                  </View>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => setMosqueScheduleOpen(false)}>
+                    <Text style={styles.closeButton}>X</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.mosqueInputLabel}>{copy.mosqueName}</Text>
+                <TextInput
+                  value={mosqueScheduleDraft.mosqueName}
+                  onChangeText={(mosqueName) => setMosqueScheduleDraft((current) => ({ ...current, mosqueName }))}
+                  placeholder={copy.mosqueName}
+                  placeholderTextColor="#78968b"
+                  style={styles.locationInput}
+                  returnKeyType="next"
+                />
+                <Text style={styles.mosqueInputLabel}>{copy.jamaatTimes}</Text>
+                <Text style={styles.mosqueInputHint}>{copy.time24HourHint}</Text>
+                <View style={styles.mosqueTimeInputs}>
+                  {PRAYER_NAMES.map((name) => (
+                    <View key={name} style={styles.mosqueTimeInputRow}>
+                      <Text style={styles.mosquePrayerName}>{getPrayerLabel(name, language)}</Text>
+                      <TextInput
+                        value={mosqueScheduleDraft.times[name]}
+                        onChangeText={(value) => setMosqueScheduleDraft((current) => ({
+                          ...current,
+                          times: { ...current.times, [name]: value },
+                        }))}
+                        placeholder="HH:MM"
+                        placeholderTextColor="#78968b"
+                        style={styles.mosqueTimeInput}
+                        keyboardType="numbers-and-punctuation"
+                        maxLength={5}
+                        returnKeyType={name === 'Isha' ? 'done' : 'next'}
+                      />
+                    </View>
+                  ))}
+                </View>
+                <View style={styles.mosqueEditorActions}>
+                  <Pressable style={styles.clearMosqueScheduleButton} onPress={clearMosqueSchedule}>
+                    <Text style={styles.clearMosqueScheduleText}>{copy.clearMosqueSchedule}</Text>
+                  </Pressable>
+                  <Pressable style={styles.saveMosqueScheduleButton} onPress={saveMosqueSchedule}>
+                    <Text style={styles.saveMosqueScheduleText}>{copy.save}</Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
       <Modal visible={timeAdjustmentsOpen} transparent animationType="slide" onRequestClose={() => setTimeAdjustmentsOpen(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.adjustmentsModal}>
@@ -948,6 +1133,19 @@ const styles = StyleSheet.create({
   progressTrack: { backgroundColor: '#c69d4c', height: 5, borderRadius: 3, marginTop: 22, overflow: 'hidden' },
   progressFill: { width: '42%', height: '100%', backgroundColor: '#173c37', borderRadius: 3 },
   mosqueNote: { color: '#78968b', fontSize: 11, lineHeight: 16, marginTop: 10 },
+  mosqueScheduleCard: { backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 16, padding: 15, marginTop: 16 },
+  mosqueScheduleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  mosqueScheduleHeading: { flex: 1 },
+  mosqueScheduleTitle: { color: '#9bb5a7', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  mosqueScheduleName: { color: '#f5f1e6', fontSize: 15, fontWeight: '700', marginTop: 5 },
+  mosqueScheduleEditButton: { borderWidth: 1, borderColor: '#56806f', borderRadius: 9, paddingHorizontal: 10, paddingVertical: 7 },
+  mosqueScheduleEditText: { color: '#f4c96d', fontSize: 11, fontWeight: '700' },
+  mosqueScheduleHint: { color: '#85a198', fontSize: 12, lineHeight: 18, marginTop: 10 },
+  mosqueScheduleRows: { marginTop: 10 },
+  mosqueScheduleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 7, borderTopWidth: 1, borderTopColor: '#284945' },
+  mosquePrayerName: { color: '#dbe6dc', fontSize: 13, fontWeight: '600' },
+  mosquePrayerTime: { color: '#f4c96d', fontSize: 13, fontWeight: '700' },
+  mosqueScheduleNote: { color: '#85a198', fontSize: 10, lineHeight: 15, marginTop: 8 },
   sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 30, marginBottom: 13 },
   sectionTitle: { color: '#f5f1e6', fontSize: 20, fontWeight: '700' },
   progressLabel: { color: '#f4c96d', fontSize: 11, fontWeight: '700' },
@@ -985,6 +1183,19 @@ const styles = StyleSheet.create({
   clubLogo: { width: 34, height: 42, resizeMode: 'contain', marginBottom: 8 },
   creditText: { color: '#dbe6dc', fontSize: 12, fontWeight: '700' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 0, 0, 0.55)' },
+  keyboardAvoiding: { flex: 1, justifyContent: 'flex-end' },
+  mosqueEditorModal: { backgroundColor: '#173c37', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '88%' },
+  mosqueEditorContent: { paddingHorizontal: 22, paddingTop: 22, paddingBottom: 30 },
+  mosqueInputLabel: { color: '#f5f1e6', fontSize: 13, fontWeight: '700', marginTop: 14, marginBottom: 8 },
+  mosqueInputHint: { color: '#9bb5a7', fontSize: 11, marginBottom: 8 },
+  mosqueTimeInputs: { gap: 8 },
+  mosqueTimeInputRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#244a43' },
+  mosqueTimeInput: { width: 94, color: '#f5f1e6', fontSize: 15, textAlign: 'center', borderWidth: 1, borderColor: '#56806f', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 7 },
+  mosqueEditorActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  clearMosqueScheduleButton: { flex: 1, minHeight: 46, borderWidth: 1, borderColor: '#56806f', borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
+  clearMosqueScheduleText: { color: '#dbe6dc', fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  saveMosqueScheduleButton: { flex: 1, minHeight: 46, backgroundColor: '#e2b65e', borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  saveMosqueScheduleText: { color: '#173c37', fontSize: 13, fontWeight: '800' },
   adjustmentsModal: { backgroundColor: '#173c37', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 22, paddingTop: 24, paddingBottom: 32, maxHeight: '82%' },
   adjustmentsHeaderCopy: { flex: 1, paddingRight: 12 },
   adjustmentList: { gap: 8 },
