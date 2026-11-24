@@ -39,6 +39,7 @@ type PrayerTimeAdjustments = Record<PrayerName, number>;
 type MosqueSchedule = { mosqueName: string; times: Record<PrayerName, string> };
 type MonthlyTimetableDay = { date: Date; prayers: Prayer[] };
 type Language = 'en' | 'hi';
+type PrayerUnitKind = 'sunnahMuakkadah' | 'sunnahGhairMuakkadah' | 'fard' | 'nafl' | 'witr';
 
 const COPY = {
   en: {
@@ -77,6 +78,20 @@ const COPY = {
     weeklyProgress: 'Prayer progress · last 7 days',
     weeklyProgressCount: (count: number, total: number) => `${count} of ${total} prayers completed`,
     fullPrayerDays: (count: number) => `${count} full days`,
+    prayerGuide: 'How to perform this prayer',
+    prayerScheduleTitle: 'Common Hanafi sequence',
+    prayerUnitTypes: {
+      sunnahMuakkadah: 'Sunnah mu’akkadah',
+      sunnahGhairMuakkadah: 'Sunnah ghayr mu’akkadah',
+      fard: 'Fard',
+      nafl: 'Nafl (optional)',
+      witr: 'Witr (wajib in Hanafi practice)',
+    },
+    prayerScheduleNote: 'This is a commonly taught Hanafi sequence. Sunnah and optional rak‘ahs, and the ruling and method for Witr, vary by school. Follow the school and local imam you trust.',
+    witrGuide: 'In the Hanafi method, Witr is three rak‘ahs. In the third rak‘ah, recite Al-Fatiha and another Qur’an portion, say the extra takbir, then recite the Qunut supplication before ruku.',
+    guideSteps: 'Basic steps',
+    guideNote: 'These are basic movement steps; recitation details and some rulings vary by school. Follow the school and local imam you trust.',
+    viewPrayerGuide: (name: string) => `How to perform ${name}`,
     companion: 'YOUR DAILY COMPANION', launchSubtitle: 'Prayer times, wherever you are', developed: 'DEVELOPED BY',
     finding: 'Finding your location', preparing: "Preparing today's prayer times", current: 'CURRENT LOCATION',
     unavailable: 'Location unavailable', update: 'UPDATE', chooseCity: 'Choose another city', next: 'NEXT PRAYER',
@@ -120,6 +135,20 @@ const COPY = {
     weeklyProgress: 'पिछले 7 दिनों की नमाज़ प्रगति',
     weeklyProgressCount: (count: number, total: number) => `${count} / ${total} नमाज़ पूरी`,
     fullPrayerDays: (count: number) => `${count} पूरे दिन`,
+    prayerGuide: 'यह नमाज़ कैसे पढ़ें',
+    prayerScheduleTitle: 'आम हनफ़ी क्रम',
+    prayerUnitTypes: {
+      sunnahMuakkadah: 'सुन्नत मुअक्कदा',
+      sunnahGhairMuakkadah: 'सुन्नत ग़ैर मुअक्कदा',
+      fard: 'फ़र्ज़',
+      nafl: 'नफ़्ल (ऐच्छिक)',
+      witr: 'वित्र (हनफ़ी अमल में वाजिब)',
+    },
+    prayerScheduleNote: 'यह आम तौर पर सिखाया जाने वाला हनफ़ी क्रम है। सुन्नत और ऐच्छिक रकअतें तथा वित्र का हुक्म और तरीका अलग हो सकता है। अपने अमल के मज़हब और भरोसेमंद स्थानीय इमाम की रहनुमाई मानें।',
+    witrGuide: 'हनफ़ी तरीके में वित्र तीन रकअत है। तीसरी रकअत में सूरह फ़ातिहा और क़ुरआन का एक और हिस्सा पढ़ें, अतिरिक्त तकबीर कहें, फिर रुकू से पहले दुआ-ए-क़ुनूत पढ़ें।',
+    guideSteps: 'बुनियादी तरीके',
+    guideNote: 'ये नमाज़ की बुनियादी हरकतें हैं; क़िराअत और कुछ हुक्म अमल के मज़हब के अनुसार अलग हो सकते हैं। अपने भरोसेमंद स्थानीय इमाम की रहनुमाई मानें।',
+    viewPrayerGuide: (name: string) => `${name} नमाज़ पढ़ने का तरीका`,
     qibla: 'क़िबला दिशा',
     qiblaBearingLabel: 'उत्तर से दिशा',
     qiblaCompassHint: 'फ़ोन का ऊपरी हिस्सा तीर की दिशा में रखें',
@@ -155,6 +184,29 @@ const REMINDER_DATA_KEY = 'azanReminder';
 const REMINDER_DAYS_AHEAD = 8;
 const KAABA_COORDINATES = { latitude: 21.4225, longitude: 39.8262 };
 const PRAYER_NAMES: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+const PRAYER_SCHEDULES: Record<PrayerName, { count: number; kind: PrayerUnitKind }[]> = {
+  Fajr: [{ count: 2, kind: 'sunnahMuakkadah' }, { count: 2, kind: 'fard' }],
+  Dhuhr: [{ count: 4, kind: 'sunnahMuakkadah' }, { count: 4, kind: 'fard' }, { count: 2, kind: 'sunnahMuakkadah' }, { count: 2, kind: 'nafl' }],
+  Asr: [{ count: 4, kind: 'sunnahGhairMuakkadah' }, { count: 4, kind: 'fard' }],
+  Maghrib: [{ count: 3, kind: 'fard' }, { count: 2, kind: 'sunnahMuakkadah' }, { count: 2, kind: 'nafl' }],
+  Isha: [{ count: 4, kind: 'sunnahGhairMuakkadah' }, { count: 4, kind: 'fard' }, { count: 2, kind: 'sunnahMuakkadah' }, { count: 2, kind: 'nafl' }, { count: 3, kind: 'witr' }, { count: 2, kind: 'nafl' }],
+};
+const PRAYER_GUIDE_STEPS = {
+  en: [
+    'Make wudu, ensure the prayer time has begun, and face the Qibla. Make the intention in your heart.',
+    'Begin with “Allahu Akbar” while standing. In each rak‘ah, recite Al-Fatiha; in the first two rak‘ahs, add another portion of the Qur’an.',
+    'Bow in ruku, then stand upright. Make two sujud, sitting briefly between them. This completes one rak‘ah.',
+    'After the second rak‘ah, sit and recite the Tashahhud. For a three or four rak‘ah prayer, stand and complete the remaining rak‘ahs.',
+    'At the final sitting, recite the Tashahhud and salawat, then end the prayer with salam to each side.',
+  ],
+  hi: [
+    'वुज़ू करें, नमाज़ का समय शुरू होने की पुष्टि करें और क़िबला की ओर रुख़ करें। दिल में नमाज़ की नीयत करें।',
+    'खड़े होकर “अल्लाहु अकबर” कहें। हर रकअत में सूरह फ़ातिहा पढ़ें; पहली दो रकअत में क़ुरआन का एक और हिस्सा पढ़ें।',
+    'रुकू करें, फिर सीधे खड़े हों। दो सज्दे करें और उनके बीच थोड़ी देर बैठें। इससे एक रकअत पूरी होती है।',
+    'दूसरी रकअत के बाद बैठकर अत्तहिय्यात पढ़ें। तीन या चार रकअत वाली नमाज़ में खड़े होकर बाकी रकअतें पूरी करें।',
+    'आख़िरी बैठक में अत्तहिय्यात और दुरूद पढ़ें, फिर दोनों ओर सलाम फेरकर नमाज़ पूरी करें।',
+  ],
+} as const;
 const DEFAULT_PRAYER_REMINDERS: PrayerReminderPreferences = {
   Fajr: true,
   Dhuhr: true,
@@ -429,6 +481,7 @@ export default function App() {
   const [mosqueScheduleDraft, setMosqueScheduleDraft] = useState(EMPTY_MOSQUE_SCHEDULE);
   const [mosqueScheduleOpen, setMosqueScheduleOpen] = useState(false);
   const [monthlyTimetableOpen, setMonthlyTimetableOpen] = useState(false);
+  const [selectedPrayerGuide, setSelectedPrayerGuide] = useState<PrayerName | null>(null);
   const [displayMonth, setDisplayMonth] = useState(() => {
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
@@ -929,7 +982,17 @@ export default function App() {
                 style={[styles.prayerRow, isNext && styles.activeRow, completed && styles.completedRow]}
               >
                 <View style={[styles.prayerIcon, isNext && styles.activeIcon]}><Text style={styles.iconText}>{prayer.icon}</Text></View>
-                <View style={styles.prayerName}><Text style={[styles.nameText, completed && styles.completedName]}>{getPrayerLabel(prayer.name, language)}</Text><Text style={styles.subText}>{copy.endsBy} {formatTime(prayer.endTime)}</Text></View>
+                <View style={styles.prayerName}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={copy.viewPrayerGuide(getPrayerLabel(prayer.name, language))}
+                    onPress={() => setSelectedPrayerGuide(prayer.name)}
+                    hitSlop={4}
+                  >
+                    <Text style={[styles.nameText, styles.prayerGuideLink, completed && styles.completedName]}>{getPrayerLabel(prayer.name, language)} <Text style={styles.prayerGuideInfo}>ⓘ</Text></Text>
+                  </Pressable>
+                  <Text style={styles.subText}>{copy.endsBy} {formatTime(prayer.endTime)}</Text>
+                </View>
                 <Text style={[styles.prayerTime, isNext && styles.activeTime]}>{formatTime(prayer.time)}</Text>
                 <Pressable
                   accessibilityRole="switch"
@@ -1021,6 +1084,44 @@ export default function App() {
           <Text style={styles.creditText}>Developed by MD Faiyazuddin</Text>
         </View>
       </ScrollView>
+      <Modal visible={selectedPrayerGuide !== null} transparent animationType="slide" onRequestClose={() => setSelectedPrayerGuide(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.prayerGuideModal}>
+            <View style={styles.modalHeader}>
+              <View style={styles.adjustmentsHeaderCopy}>
+                <Text style={styles.modalTitle}>{selectedPrayerGuide ? getPrayerLabel(selectedPrayerGuide, language) : copy.prayerGuide}</Text>
+                <Text style={styles.modalSubtitle}>{copy.prayerGuide}</Text>
+              </View>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => setSelectedPrayerGuide(null)}>
+                <Text style={styles.closeButton}>X</Text>
+              </Pressable>
+            </View>
+            {selectedPrayerGuide ? (
+              <ScrollView style={styles.prayerGuideScroll} contentContainerStyle={styles.prayerGuideContent}>
+                <Text style={styles.prayerGuideSectionTitle}>{copy.prayerScheduleTitle}</Text>
+                <View style={styles.prayerScheduleList}>
+                  {PRAYER_SCHEDULES[selectedPrayerGuide].map((unit, index) => (
+                    <View key={`${unit.kind}-${index}`} style={styles.prayerScheduleRow}>
+                      <Text style={styles.prayerScheduleCount}>{unit.count}</Text>
+                      <Text style={styles.prayerScheduleType}>{copy.prayerUnitTypes[unit.kind]}</Text>
+                    </View>
+                  ))}
+                </View>
+                <Text style={styles.prayerGuideNote}>{copy.prayerScheduleNote}</Text>
+                <Text style={styles.prayerGuideSectionTitle}>{copy.guideSteps}</Text>
+                {PRAYER_GUIDE_STEPS[language].map((step, index) => (
+                  <View key={step} style={styles.prayerGuideStep}>
+                    <Text style={styles.prayerGuideStepNumber}>{index + 1}</Text>
+                    <Text style={styles.prayerGuideStepText}>{step}</Text>
+                  </View>
+                ))}
+                <Text style={styles.prayerGuideNote}>{copy.guideNote}</Text>
+                {selectedPrayerGuide === 'Isha' ? <Text style={styles.prayerGuideNote}>{copy.witrGuide}</Text> : null}
+              </ScrollView>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
       <Modal visible={monthlyTimetableOpen} transparent animationType="slide" onRequestClose={() => setMonthlyTimetableOpen(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.monthlyModal}>
@@ -1264,6 +1365,20 @@ const styles = StyleSheet.create({
   qiblaHint: { color: '#9bb5a7', fontSize: 10, lineHeight: 14, marginTop: 4 },
   qiblaLocation: { color: '#85a198', fontSize: 10, marginTop: 5 },
   monthlyTimetableButton: { backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 12, minHeight: 46, paddingHorizontal: 15, marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  prayerGuideLink: { textDecorationLine: 'underline', textDecorationColor: '#78968b' },
+  prayerGuideInfo: { color: '#9bb5a7', fontSize: 13 },
+  prayerGuideModal: { backgroundColor: '#173c37', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '86%', paddingHorizontal: 22, paddingTop: 22, paddingBottom: 18 },
+  prayerGuideScroll: { flexShrink: 1 },
+  prayerGuideContent: { paddingBottom: 12 },
+  prayerGuideSectionTitle: { color: '#f5f1e6', fontSize: 15, fontWeight: '700', marginBottom: 10 },
+  prayerScheduleList: { borderRadius: 12, backgroundColor: '#244a43', paddingHorizontal: 12, marginBottom: 6 },
+  prayerScheduleRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: '#41635c' },
+  prayerScheduleCount: { width: 28, color: '#f4c96d', fontSize: 16, fontWeight: '900', textAlign: 'center' },
+  prayerScheduleType: { flex: 1, color: '#dbe6dc', fontSize: 12, fontWeight: '600' },
+  prayerGuideStep: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#284945' },
+  prayerGuideStepNumber: { color: '#173c37', backgroundColor: '#e2b65e', width: 24, height: 24, borderRadius: 12, textAlign: 'center', textAlignVertical: 'center', overflow: 'hidden', fontSize: 12, fontWeight: '900' },
+  prayerGuideStepText: { flex: 1, color: '#dbe6dc', fontSize: 13, lineHeight: 20 },
+  prayerGuideNote: { color: '#9bb5a7', fontSize: 11, lineHeight: 17, marginTop: 16 },
   monthlyTimetableButtonText: { color: '#f4c96d', fontSize: 13, fontWeight: '700' },
   monthlyTimetableArrow: { color: '#f4c96d', fontSize: 23, lineHeight: 24 },
   weeklyProgressCard: { backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 16, padding: 15, marginTop: 14 },
