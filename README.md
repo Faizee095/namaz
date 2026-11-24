@@ -1,18 +1,27 @@
 # Azan
 
-A personal prayer-time app built with Expo and React Native. Azan calculates daily prayer-start times for the user's location, schedules local reminders, plays a bundled Azan notification sound, supports English and Hindi UI, and lets users track completed prayers.
+A personal prayer-time app built with Expo and React Native. Azan calculates prayer times for the user's location, shows each prayer's time window, provides Qibla direction and prayer guides, schedules local reminders, and tracks daily and weekly prayer progress. The interface is available in English and Hindi.
 
 ## Features
 
 - Prayer times for Fajr, Dhuhr, Asr, Maghrib, and Isha.
+- The calculated end of each prayer window: Fajr to sunrise, Dhuhr to Asr, Asr to Maghrib, Maghrib to Isha, and Isha to the next Fajr.
+- Friday Jumu’ah information during the Dhuhr window, with a short guide.
+- Tahajjud window after Isha and before Fajr, including the app's recommended last third of the night.
+- A Qibla bearing from north and a phone compass direction indicator when heading data is available.
 - Device-location detection with a Muzaffarpur fallback.
 - Manual city search, including locations such as London, Dubai, and Patna.
 - English/Hindi language toggle.
 - Daily prayer completion checkboxes saved on the device.
 - Completion message after all five prayers are checked.
+- Prayer progress for the last seven days.
+- Tap a prayer to see a common Hanafi rak‘ah sequence and basic movement guide. Jumu’ah and Tahajjud rows also open their guides.
+- Online Arabic recitation audio for selected Qur’an passages and prayer supplications. Audio playback needs an internet connection.
+- A monthly timetable that can be shared.
+- Optional per-prayer time adjustments.
 - Local daily notifications with the bundled Azan sound.
 - Branded launch screen and developer credit.
-- Mosque schedules remain separate from calculated prayer-start times.
+- Editable local mosque Jama’at schedule, kept separate from calculated prayer-start times.
 
 ## Calculation behavior
 
@@ -21,13 +30,15 @@ The app uses the `adhan` package with:
 - Karachi calculation parameters: 18 degrees for Fajr and Isha.
 - Hanafi madhab for Asr independently from the general calculation method.
 
-The displayed times are calculated prayer-start times. They are not intended to reproduce a particular mosque's delayed Azan or Jama'at schedule. Different mosques can announce Azan or Jama'at at different times, so the app does not add an arbitrary delay to Isha.
+The displayed times are calculated prayer-start times. The listed prayer end times use the next prayer boundary in this calculation: sunrise ends Fajr, Asr starts the end of Dhuhr, Maghrib ends Asr, Isha ends Maghrib, and the next Fajr ends Isha. These are calculation-based windows, not a mosque's Azan or Jama'at schedule. Different mosques may use local timings; the app keeps the mosque schedule separate and does not add an arbitrary delay to Isha.
+
+The prayer guides show a commonly taught Hanafi sequence. Sunnah and optional rak‘ahs, and Witr rulings and methods, vary by school. The guides are a basic reference; follow the school and local imam you trust. Jumu’ah follows the mosque's khutbah and congregation time. Tahajjud's last-third period is calculated from the displayed Isha-to-Fajr night interval.
 
 ## Requirements
 
 Install these before starting:
 
-- Node.js 20.19.4 or newer is recommended by the Expo SDK 57 dependency tree.
+- Node.js and npm versions supported by the Expo version installed in `package.json`.
 - npm.
 - Expo Go for phone testing, or an Android emulator.
 - An Expo account for EAS cloud builds.
@@ -39,7 +50,7 @@ node --version
 npm --version
 ```
 
-Node 20.19.3 may work but can show `EBADENGINE` warnings. Upgrade Node if possible.
+If npm reports `EBADENGINE`, install a supported Node.js version for the Expo SDK used by this project.
 
 ## Clone and install
 
@@ -171,14 +182,16 @@ The app bundles:
 assets/azan.mp3
 ```
 
-The recording is configured as the Android notification-channel sound and notification sound. The channel ID is `azan-reminders-v2` so existing installs can adopt the new sound after reinstalling a rebuilt app.
+The recording is configured as the notification sound and as the Android notification-channel sound. The channel ID is `azan-reminders-v3`.
 
 Important behavior:
 
 - The user must enable reminders inside the app.
 - The user must grant notification permission.
+- Reminders are scheduled for the selected five daily prayers, up to eight days ahead, using the app's calculated prayer times.
+- Expo Go uses the device's default notification sound; the custom Azan sound requires a rebuilt native app.
 - Android notification-channel settings can be changed by the user in system settings.
-- Custom notification audio requires a rebuilt native APK; it cannot be fully verified in Expo Go.
+- An existing Android installation may keep its prior notification-channel settings. Reinstall the rebuilt app and check the channel's sound setting if Azan does not play.
 - The phone's volume, silent mode, Do Not Disturb, and battery restrictions can affect playback.
 
 The audio attribution and license are documented in [AUDIO_LICENSE.md](AUDIO_LICENSE.md).
@@ -195,7 +208,11 @@ Manual city selection is useful when the user is in one place but wants to view 
 
 ## Daily tracker
 
-Each prayer row is tappable. The app stores completion state in AsyncStorage under a key for the local calendar date. The tracker shows progress such as `3/5 done`, resets automatically on a new day, and displays a completion message after all five prayers are checked.
+Each prayer row opens its prayer guide, and the completion control tracks whether it was performed. The app stores completion state in AsyncStorage by local calendar date. The tracker shows daily progress, resets for each new date, and includes a seven-day progress view.
+
+## Qibla
+
+The Qibla section calculates the initial bearing from the selected coordinates to the Kaaba. When the device provides compass heading data, the direction indicator rotates relative to the phone. Keep the phone flat and use the on-screen bearing as a directional aid; nearby magnetic interference can affect compass readings.
 
 ## Project structure
 
@@ -227,7 +244,7 @@ Disable VPNs and allow Node.js through Windows Firewall if necessary.
 
 ### Notifications do not play Azan
 
-Confirm that reminders are enabled, notification permission is granted, the new rebuilt APK is installed, and the Android channel sound is enabled in system notification settings. A previously installed APK may still use the old notification channel.
+Confirm that reminders are enabled and notification permission is granted. Expo Go uses the default notification sound. For the custom Azan sound, install a rebuilt native app and check that the Android `Prayer reminders` channel has sound enabled in system settings. Android preserves channel settings on the device, which can override the app's configured sound.
 
 ### Location remains unavailable
 
