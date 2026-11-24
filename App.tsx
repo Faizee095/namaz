@@ -4,6 +4,7 @@ import Constants, { AppOwnership } from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { CalculationMethod, Coordinates, Madhab, PrayerTimes } from 'adhan';
 import {
   Alert,
@@ -40,6 +41,7 @@ type MosqueSchedule = { mosqueName: string; times: Record<PrayerName, string> };
 type MonthlyTimetableDay = { date: Date; prayers: Prayer[] };
 type Language = 'en' | 'hi';
 type PrayerUnitKind = 'sunnahMuakkadah' | 'sunnahGhairMuakkadah' | 'fard' | 'nafl' | 'witr';
+type PrayerAudioTrack = { id: string; label: Record<Language, string>; url: string; onlyForIsha?: boolean };
 
 const COPY = {
   en: {
@@ -89,6 +91,11 @@ const COPY = {
     },
     prayerScheduleNote: 'This is a commonly taught Hanafi sequence. Sunnah and optional rak‘ahs, and the ruling and method for Witr, vary by school. Follow the school and local imam you trust.',
     witrGuide: 'In the Hanafi method, Witr is three rak‘ahs. In the third rak‘ah, recite Al-Fatiha and another Qur’an portion, say the extra takbir, then recite the Qunut supplication before ruku.',
+    prayerAudio: 'Listen to the recitations',
+    playAudio: 'Play Arabic recitation',
+    pauseAudio: 'Pause recitation',
+    audioNeedsInternet: 'Audio streams online and needs an internet connection.',
+    audioAttribution: 'Quran recitation: Mishary Rashid Alafasy via Quran Foundation. Prayer supplications: Muhammad Jumah for OpenDua, CC BY 4.0 (opendua.org/licence/audio).',
     guideSteps: 'Basic steps',
     guideNote: 'These are basic movement steps; recitation details and some rulings vary by school. Follow the school and local imam you trust.',
     viewPrayerGuide: (name: string) => `How to perform ${name}`,
@@ -146,6 +153,11 @@ const COPY = {
     },
     prayerScheduleNote: 'यह आम तौर पर सिखाया जाने वाला हनफ़ी क्रम है। सुन्नत और ऐच्छिक रकअतें तथा वित्र का हुक्म और तरीका अलग हो सकता है। अपने अमल के मज़हब और भरोसेमंद स्थानीय इमाम की रहनुमाई मानें।',
     witrGuide: 'हनफ़ी तरीके में वित्र तीन रकअत है। तीसरी रकअत में सूरह फ़ातिहा और क़ुरआन का एक और हिस्सा पढ़ें, अतिरिक्त तकबीर कहें, फिर रुकू से पहले दुआ-ए-क़ुनूत पढ़ें।',
+    prayerAudio: 'तिलावत और दुआएँ सुनें',
+    playAudio: 'अरबी तिलावत चलाएँ',
+    pauseAudio: 'तिलावत रोकें',
+    audioNeedsInternet: 'ऑडियो ऑनलाइन चलता है; इंटरनेट कनेक्शन चाहिए।',
+    audioAttribution: 'क़ुरआन तिलावत: क़ुरआन फ़ाउंडेशन के माध्यम से मिशारी राशिद अल-अफ़ासी। नमाज़ की दुआएँ: OpenDua के लिए मुहम्मद जुमा, CC BY 4.0 (opendua.org/licence/audio)।',
     guideSteps: 'बुनियादी तरीके',
     guideNote: 'ये नमाज़ की बुनियादी हरकतें हैं; क़िराअत और कुछ हुक्म अमल के मज़हब के अनुसार अलग हो सकते हैं। अपने भरोसेमंद स्थानीय इमाम की रहनुमाई मानें।',
     viewPrayerGuide: (name: string) => `${name} नमाज़ पढ़ने का तरीका`,
@@ -191,6 +203,18 @@ const PRAYER_SCHEDULES: Record<PrayerName, { count: number; kind: PrayerUnitKind
   Maghrib: [{ count: 3, kind: 'fard' }, { count: 2, kind: 'sunnahMuakkadah' }, { count: 2, kind: 'nafl' }],
   Isha: [{ count: 4, kind: 'sunnahGhairMuakkadah' }, { count: 4, kind: 'fard' }, { count: 2, kind: 'sunnahMuakkadah' }, { count: 2, kind: 'nafl' }, { count: 3, kind: 'witr' }, { count: 2, kind: 'nafl' }],
 };
+const PRAYER_AUDIO_TRACKS: PrayerAudioTrack[] = [
+  { id: 'fatiha', label: { en: 'Surah Al-Fatiha', hi: 'सूरह अल-फ़ातिहा' }, url: 'https://download.quranicaudio.com/qdc/mishari_al_afasy/murattal/1.mp3' },
+  { id: 'ikhlas', label: { en: 'Surah Al-Ikhlas (example short surah)', hi: 'सूरह अल-इख़लास (छोटी सूरह का उदाहरण)' }, url: 'https://download.quranicaudio.com/qdc/mishari_al_afasy/murattal/112.mp3' },
+  { id: 'ruku', label: { en: 'During ruku: Subhana Rabbiyal Azeem', hi: 'रुकू में: सुब्हाना रब्बियल अज़ीम' }, url: 'https://audio.opendua.org/hisn/v0.0.2/OD-033.mp3' },
+  { id: 'rise', label: { en: 'Rising from ruku: Sami Allahu liman hamidah', hi: 'रुकू से उठते हुए: समिअल्लाहु लिमन हमिदह' }, url: 'https://audio.opendua.org/hisn/v0.0.2/OD-038.mp3' },
+  { id: 'praise', label: { en: 'Standing: Rabbana wa lakal hamd', hi: 'खड़े होकर: रब्बना व लकल हम्द' }, url: 'https://audio.opendua.org/hisn/v0.0.2/OD-039.mp3' },
+  { id: 'sujood', label: { en: 'During sujood: Subhana Rabbiyal Ala', hi: 'सज्दे में: सुब्हाना रब्बियल आला' }, url: 'https://audio.opendua.org/hisn/v0.0.2/OD-041.mp3' },
+  { id: 'between-sujood', label: { en: 'Between the two sujoods: Rabbighfir li', hi: 'दो सज्दों के बीच: रब्बिग़फ़िर ली' }, url: 'https://audio.opendua.org/hisn/v0.0.2/OD-048.mp3' },
+  { id: 'tashahhud', label: { en: 'At-Tashahhud', hi: 'अत्तहिय्यात' }, url: 'https://audio.opendua.org/hisn/v0.0.2/OD-052.mp3' },
+  { id: 'salawat', label: { en: 'Salawat Ibrahimiyyah', hi: 'दुरूद इब्राहीम' }, url: 'https://audio.opendua.org/hisn/v0.0.2/OD-053.mp3' },
+  { id: 'qunut', label: { en: 'Dua-e-Qunut for Witr', hi: 'वित्र की दुआ-ए-क़ुनूत' }, url: 'https://audio.opendua.org/hisn/v0.0.2/OD-116.mp3', onlyForIsha: true },
+];
 const PRAYER_GUIDE_STEPS = {
   en: [
     'Make wudu, ensure the prayer time has begun, and face the Qibla. Make the intention in your heart.',
@@ -482,6 +506,9 @@ export default function App() {
   const [mosqueScheduleOpen, setMosqueScheduleOpen] = useState(false);
   const [monthlyTimetableOpen, setMonthlyTimetableOpen] = useState(false);
   const [selectedPrayerGuide, setSelectedPrayerGuide] = useState<PrayerName | null>(null);
+  const [activePrayerAudioId, setActivePrayerAudioId] = useState<string | null>(null);
+  const prayerAudioPlayer = useAudioPlayer(null);
+  const prayerAudioStatus = useAudioPlayerStatus(prayerAudioPlayer);
   const [displayMonth, setDisplayMonth] = useState(() => {
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
@@ -806,6 +833,27 @@ export default function App() {
     setMosqueScheduleOpen(true);
   }
 
+  function closePrayerGuide() {
+    prayerAudioPlayer.pause();
+    setActivePrayerAudioId(null);
+    setSelectedPrayerGuide(null);
+  }
+
+  function togglePrayerAudio(track: PrayerAudioTrack) {
+    if (activePrayerAudioId === track.id) {
+      if (prayerAudioStatus.playing) {
+        prayerAudioPlayer.pause();
+      } else {
+        if (prayerAudioStatus.didJustFinish) void prayerAudioPlayer.seekTo(0);
+        prayerAudioPlayer.play();
+      }
+      return;
+    }
+    setActivePrayerAudioId(track.id);
+    prayerAudioPlayer.replace(track.url);
+    prayerAudioPlayer.play();
+  }
+
   async function saveMosqueSchedule() {
     let hasInvalidTime = false;
     const times = Object.fromEntries(PRAYER_NAMES.map((name) => {
@@ -1084,7 +1132,7 @@ export default function App() {
           <Text style={styles.creditText}>Developed by MD Faiyazuddin</Text>
         </View>
       </ScrollView>
-      <Modal visible={selectedPrayerGuide !== null} transparent animationType="slide" onRequestClose={() => setSelectedPrayerGuide(null)}>
+      <Modal visible={selectedPrayerGuide !== null} transparent animationType="slide" onRequestClose={closePrayerGuide}>
         <View style={styles.modalBackdrop}>
           <View style={styles.prayerGuideModal}>
             <View style={styles.modalHeader}>
@@ -1092,7 +1140,7 @@ export default function App() {
                 <Text style={styles.modalTitle}>{selectedPrayerGuide ? getPrayerLabel(selectedPrayerGuide, language) : copy.prayerGuide}</Text>
                 <Text style={styles.modalSubtitle}>{copy.prayerGuide}</Text>
               </View>
-              <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => setSelectedPrayerGuide(null)}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={closePrayerGuide}>
                 <Text style={styles.closeButton}>X</Text>
               </Pressable>
             </View>
@@ -1108,6 +1156,28 @@ export default function App() {
                   ))}
                 </View>
                 <Text style={styles.prayerGuideNote}>{copy.prayerScheduleNote}</Text>
+                <Text style={styles.prayerGuideSectionTitle}>{copy.prayerAudio}</Text>
+                <View style={styles.prayerAudioList}>
+                  {PRAYER_AUDIO_TRACKS.filter((track) => !track.onlyForIsha || selectedPrayerGuide === 'Isha').map((track) => {
+                    const isActiveTrack = activePrayerAudioId === track.id;
+                    const isPlaying = isActiveTrack && prayerAudioStatus.playing;
+                    return (
+                      <View key={track.id} style={styles.prayerAudioRow}>
+                        <Text style={styles.prayerAudioLabel}>{track.label[language]}</Text>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`${isPlaying ? copy.pauseAudio : copy.playAudio}: ${track.label[language]}`}
+                          onPress={() => togglePrayerAudio(track)}
+                          style={styles.prayerAudioButton}
+                        >
+                          <Text style={styles.prayerAudioButtonText}>{isPlaying ? 'Ⅱ' : '▶'}</Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })}
+                </View>
+                <Text style={styles.prayerGuideNote}>{copy.audioNeedsInternet}</Text>
+                <Text style={styles.prayerGuideAttribution}>{copy.audioAttribution}</Text>
                 <Text style={styles.prayerGuideSectionTitle}>{copy.guideSteps}</Text>
                 {PRAYER_GUIDE_STEPS[language].map((step, index) => (
                   <View key={step} style={styles.prayerGuideStep}>
@@ -1375,6 +1445,12 @@ const styles = StyleSheet.create({
   prayerScheduleRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: '#41635c' },
   prayerScheduleCount: { width: 28, color: '#f4c96d', fontSize: 16, fontWeight: '900', textAlign: 'center' },
   prayerScheduleType: { flex: 1, color: '#dbe6dc', fontSize: 12, fontWeight: '600' },
+  prayerAudioList: { borderRadius: 12, backgroundColor: '#244a43', paddingHorizontal: 12, marginBottom: 4 },
+  prayerAudioRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#41635c' },
+  prayerAudioLabel: { flex: 1, color: '#dbe6dc', fontSize: 11, lineHeight: 16 },
+  prayerAudioButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#e2b65e' },
+  prayerAudioButtonText: { color: '#173c37', fontSize: 16, fontWeight: '900' },
+  prayerGuideAttribution: { color: '#78968b', fontSize: 9, lineHeight: 14, marginTop: 8, marginBottom: 14 },
   prayerGuideStep: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#284945' },
   prayerGuideStepNumber: { color: '#173c37', backgroundColor: '#e2b65e', width: 24, height: 24, borderRadius: 12, textAlign: 'center', textAlignVertical: 'center', overflow: 'hidden', fontSize: 12, fontWeight: '900' },
   prayerGuideStepText: { flex: 1, color: '#dbe6dc', fontSize: 13, lineHeight: 20 },
