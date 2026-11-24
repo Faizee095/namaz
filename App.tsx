@@ -29,12 +29,13 @@ Notifications.setNotificationHandler({
   }),
 });
 
-type Prayer = { name: string; arabic: string; time: Date; icon: string };
+type Prayer = { name: string; arabic: string; time: Date; endTime: Date; icon: string };
 type CompletedPrayers = Record<string, boolean>;
 type Language = 'en' | 'hi';
 
 const COPY = {
   en: {
+    endsBy: 'Ends by',
     companion: 'YOUR DAILY COMPANION', launchSubtitle: 'Prayer times, wherever you are', developed: 'DEVELOPED BY',
     finding: 'Finding your location', preparing: "Preparing today's prayer times", current: 'CURRENT LOCATION',
     unavailable: 'Location unavailable', update: 'UPDATE', chooseCity: 'Choose another city', next: 'NEXT PRAYER',
@@ -51,6 +52,7 @@ const COPY = {
     prayerBody: (name: string) => `It is time for ${name}.`, prayerTitle: (name: string) => `${name} prayer`,
   },
   hi: {
+    endsBy: 'आख़िरी समय',
     companion: 'आपका रोज़ाना साथी', launchSubtitle: 'जहाँ भी हों, नमाज़ का समय', developed: 'द्वारा विकसित',
     finding: 'आपकी लोकेशन खोज रहे हैं', preparing: 'आज के नमाज़ के समय तैयार हो रहे हैं', current: 'वर्तमान लोकेशन',
     unavailable: 'लोकेशन उपलब्ध नहीं', update: 'अपडेट', chooseCity: 'दूसरा शहर चुनें', next: 'अगली नमाज़',
@@ -106,14 +108,18 @@ function getLocalDateKey(date: Date) {
 function getPrayers(latitude: number, longitude: number, date: Date = new Date()): Prayer[] {
   const params = CalculationMethod.Karachi();
   params.madhab = Madhab.Hanafi;
-  const times = new PrayerTimes(new Coordinates(latitude, longitude), date, params);
+  const coordinates = new Coordinates(latitude, longitude);
+  const times = new PrayerTimes(coordinates, date, params);
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + 1);
+  const nextFajr = new PrayerTimes(coordinates, nextDate, params).fajr;
 
   return [
-    { name: 'Fajr', arabic: 'Dawn', time: times.fajr, icon: '01' },
-    { name: 'Dhuhr', arabic: 'Noon', time: times.dhuhr, icon: '02' },
-    { name: 'Asr', arabic: 'Afternoon', time: times.asr, icon: '03' },
-    { name: 'Maghrib', arabic: 'Sunset', time: times.maghrib, icon: '04' },
-    { name: 'Isha', arabic: 'Night', time: times.isha, icon: '05' },
+    { name: 'Fajr', arabic: 'Dawn', time: times.fajr, endTime: times.sunrise, icon: '01' },
+    { name: 'Dhuhr', arabic: 'Noon', time: times.dhuhr, endTime: times.asr, icon: '02' },
+    { name: 'Asr', arabic: 'Afternoon', time: times.asr, endTime: times.maghrib, icon: '03' },
+    { name: 'Maghrib', arabic: 'Sunset', time: times.maghrib, endTime: times.isha, icon: '04' },
+    { name: 'Isha', arabic: 'Night', time: times.isha, endTime: nextFajr, icon: '05' },
   ];
 }
 
@@ -485,7 +491,7 @@ export default function App() {
                 style={[styles.prayerRow, isNext && styles.activeRow, completed && styles.completedRow]}
               >
                 <View style={[styles.prayerIcon, isNext && styles.activeIcon]}><Text style={styles.iconText}>{prayer.icon}</Text></View>
-                <View style={styles.prayerName}><Text style={[styles.nameText, completed && styles.completedName]}>{getPrayerLabel(prayer.name, language)}</Text><Text style={styles.subText}>{getPrayerDescription(prayer.name, language)}</Text></View>
+                <View style={styles.prayerName}><Text style={[styles.nameText, completed && styles.completedName]}>{getPrayerLabel(prayer.name, language)}</Text><Text style={styles.subText}>{copy.endsBy} {formatTime(prayer.endTime)}</Text></View>
                 <Text style={[styles.prayerTime, isNext && styles.activeTime]}>{formatTime(prayer.time)}</Text>
                 <View style={[styles.checkbox, completed && styles.checkboxChecked]}><Text style={styles.checkboxMark}>{completed ? '✓' : ''}</Text></View>
               </Pressable>
