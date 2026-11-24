@@ -80,6 +80,26 @@ const COPY = {
     weeklyProgress: 'Prayer progress · last 7 days',
     weeklyProgressCount: (count: number, total: number) => `${count} of ${total} prayers completed`,
     fullPrayerDays: (count: number) => `${count} full days`,
+    additionalPrayerTimes: 'Additional prayer times',
+    jumuaPrayer: 'Jumu’ah (Friday prayer)',
+    jumuaDetails: 'Jumu’ah is prayed during the Dhuhr window and replaces Dhuhr for those who perform it. Follow your mosque’s khutbah and congregation time.',
+    tahajjudPrayer: 'Tahajjud',
+    tahajjudWindow: (start: string, end: string) => `Window: ${start} (Isha) – ${end} (Fajr).`,
+    tahajjudBestTime: (start: string, end: string) => `Recommended last third: ${start} – ${end}`,
+    jumuahGuideSteps: [
+      'Attend the mosque at its announced time and follow the local imam’s guidance.',
+      'Listen to the khutbah before the prayer.',
+      'After the khutbah and iqamah, pray two fard rak‘ahs in congregation behind the imam. Jumu’ah takes the place of Dhuhr for those who perform it.',
+    ],
+    tahajjudGuideSteps: [
+      'Pray after Isha and before Fajr. The app marks the last third of the night as a recommended time.',
+      'Pray in pairs of two rak‘ahs, ending each pair with salam.',
+      'In each rak‘ah, recite Al-Fatiha and any portion of the Qur’an you know. Pray as many pairs as you are able.',
+      'If you have not prayed Witr, you may finish the night with it. Its ruling and method vary by school; follow the practice you trust.',
+    ],
+    jumuahGuideNote: 'The khutbah and congregation time are set by your mosque. Sunnah prayers and some details vary by school.',
+    jumuahRakahs: '2 fard rak‘ahs',
+    tahajjudRakahs: 'Voluntary prayer · pairs of 2 rak‘ahs',
     prayerGuide: 'How to perform this prayer',
     prayerScheduleTitle: 'Common Hanafi sequence',
     prayerUnitTypes: {
@@ -142,6 +162,26 @@ const COPY = {
     weeklyProgress: 'पिछले 7 दिनों की नमाज़ प्रगति',
     weeklyProgressCount: (count: number, total: number) => `${count} / ${total} नमाज़ पूरी`,
     fullPrayerDays: (count: number) => `${count} पूरे दिन`,
+    additionalPrayerTimes: 'अतिरिक्त नमाज़ के समय',
+    jumuaPrayer: 'जुमे की नमाज़',
+    jumuaDetails: 'जुमे की नमाज़ ज़ुहर के समय में होती है और इसे अदा करने वालों के लिए ज़ुहर की जगह होती है। ख़ुत्बे और जमाअत के समय के लिए अपनी मस्जिद का समय देखें।',
+    tahajjudPrayer: 'तहज्जुद',
+    tahajjudWindow: (start: string, end: string) => `समय: इशा ${start} से फ़ज्र ${end} तक।`,
+    tahajjudBestTime: (start: string, end: string) => `बेहतर आख़िरी तिहाई: ${start} – ${end}`,
+    jumuahGuideSteps: [
+      'मस्जिद के बताए समय पर पहुँचें और स्थानीय इमाम की रहनुमाई मानें।',
+      'नमाज़ से पहले ख़ुत्बा ध्यान से सुनें।',
+      'ख़ुत्बे और इक़ामत के बाद इमाम के पीछे जमाअत में दो फ़र्ज़ रकअत पढ़ें। जुमे की नमाज़ अदा करने वालों के लिए यह ज़ुहर की जगह होती है।',
+    ],
+    tahajjudGuideSteps: [
+      'इशा के बाद और फ़ज्र से पहले पढ़ें। ऐप रात के आख़िरी तिहाई हिस्से को बेहतर समय के रूप में दिखाता है।',
+      'दो-दो रकअत करके पढ़ें और हर जोड़ी के बाद सलाम फेरें।',
+      'हर रकअत में सूरह फ़ातिहा और क़ुरआन का वह हिस्सा पढ़ें जो आपको याद हो। अपनी क्षमता के अनुसार रकअतें पढ़ें।',
+      'अगर वित्र न पढ़ी हो तो रात की नमाज़ के बाद पढ़ सकते हैं। इसका हुक्म और तरीका मज़हब के अनुसार अलग हो सकता है; अपने भरोसेमंद अमल की रहनुमाई मानें।',
+    ],
+    jumuahGuideNote: 'ख़ुत्बे और जमाअत का समय आपकी मस्जिद तय करती है। सुन्नत नमाज़ें और कुछ तरीक़े अमल के मज़हब के अनुसार अलग हो सकते हैं।',
+    jumuahRakahs: '2 फ़र्ज़ रकअत',
+    tahajjudRakahs: 'नफ़्ल नमाज़ · 2-2 रकअत',
     prayerGuide: 'यह नमाज़ कैसे पढ़ें',
     prayerScheduleTitle: 'आम हनफ़ी क्रम',
     prayerUnitTypes: {
@@ -506,6 +546,7 @@ export default function App() {
   const [mosqueScheduleOpen, setMosqueScheduleOpen] = useState(false);
   const [monthlyTimetableOpen, setMonthlyTimetableOpen] = useState(false);
   const [selectedPrayerGuide, setSelectedPrayerGuide] = useState<PrayerName | null>(null);
+  const [selectedAdditionalPrayerGuide, setSelectedAdditionalPrayerGuide] = useState<'Jumuah' | 'Tahajjud' | null>(null);
   const [activePrayerAudioId, setActivePrayerAudioId] = useState<string | null>(null);
   const prayerAudioPlayer = useAudioPlayer(null);
   const prayerAudioStatus = useAudioPlayerStatus(prayerAudioPlayer);
@@ -723,6 +764,19 @@ export default function App() {
     const [year, month, day] = todayKey.split('-').map(Number);
     return getPrayers(coordinates.latitude, coordinates.longitude, new Date(year, month - 1, day, 12), prayerTimeAdjustments);
   }, [coordinates.latitude, coordinates.longitude, todayKey, prayerTimeAdjustments]);
+  const isBeforeTodayFajr = now.getTime() < prayers[0].time.getTime();
+  const tahajjudNightPrayers = useMemo(() => {
+    const [year, month, day] = todayKey.split('-').map(Number);
+    const nightDate = new Date(year, month - 1, day, 12);
+    if (isBeforeTodayFajr) nightDate.setDate(nightDate.getDate() - 1);
+    return getPrayers(coordinates.latitude, coordinates.longitude, nightDate, prayerTimeAdjustments);
+  }, [coordinates.latitude, coordinates.longitude, todayKey, isBeforeTodayFajr, prayerTimeAdjustments]);
+  const dhuhrPrayer = prayers.find((prayer) => prayer.name === 'Dhuhr')!;
+  const nightMaghribPrayer = tahajjudNightPrayers.find((prayer) => prayer.name === 'Maghrib')!;
+  const nightIshaPrayer = tahajjudNightPrayers.find((prayer) => prayer.name === 'Isha')!;
+  const isFriday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getDay() === 5;
+  const tahajjudNightDuration = nightIshaPrayer.endTime.getTime() - nightMaghribPrayer.time.getTime();
+  const tahajjudLastThirdStart = new Date(nightIshaPrayer.endTime.getTime() - tahajjudNightDuration / 3);
   const monthlyDays = useMemo<MonthlyTimetableDay[]>(() => {
     const year = displayMonth.getFullYear();
     const month = displayMonth.getMonth();
@@ -837,6 +891,7 @@ export default function App() {
     prayerAudioPlayer.pause();
     setActivePrayerAudioId(null);
     setSelectedPrayerGuide(null);
+    setSelectedAdditionalPrayerGuide(null);
   }
 
   function togglePrayerAudio(track: PrayerAudioTrack) {
@@ -1072,6 +1127,28 @@ export default function App() {
           })}
         </View>
 
+        <View style={styles.additionalPrayerCard}>
+          <Text style={styles.additionalPrayerHeading}>{copy.additionalPrayerTimes}</Text>
+          {isFriday ? (
+            <Pressable accessibilityRole="button" style={styles.additionalPrayerRow} onPress={() => setSelectedAdditionalPrayerGuide('Jumuah')}>
+              <View style={styles.prayerIcon}><Text style={styles.iconText}>J</Text></View>
+              <View style={styles.additionalPrayerCopy}>
+                <Text style={styles.additionalPrayerName}>{copy.jumuaPrayer}</Text>
+                <Text style={styles.additionalPrayerNote}>{copy.jumuaDetails}</Text>
+              </View>
+              <Text style={styles.additionalPrayerTime}>{formatTime(dhuhrPrayer.time)} – {formatTime(dhuhrPrayer.endTime)}</Text>
+            </Pressable>
+          ) : null}
+          <Pressable accessibilityRole="button" style={styles.additionalPrayerRow} onPress={() => setSelectedAdditionalPrayerGuide('Tahajjud')}>
+            <View style={styles.prayerIcon}><Text style={styles.iconText}>T</Text></View>
+            <View style={styles.additionalPrayerCopy}>
+              <Text style={styles.additionalPrayerName}>{copy.tahajjudPrayer}</Text>
+              <Text style={styles.additionalPrayerNote}>{copy.tahajjudWindow(formatTime(nightIshaPrayer.time), formatTime(nightIshaPrayer.endTime))}</Text>
+              <Text style={styles.additionalPrayerBestTime}>{copy.tahajjudBestTime(formatTime(tahajjudLastThirdStart), formatTime(nightIshaPrayer.endTime))}</Text>
+            </View>
+          </Pressable>
+        </View>
+
         <View style={styles.weeklyProgressCard}>
           <View style={styles.weeklyProgressHeader}>
             <Text style={styles.weeklyProgressTitle}>{copy.weeklyProgress}</Text>
@@ -1132,12 +1209,16 @@ export default function App() {
           <Text style={styles.creditText}>Developed by MD Faiyazuddin</Text>
         </View>
       </ScrollView>
-      <Modal visible={selectedPrayerGuide !== null} transparent animationType="slide" onRequestClose={closePrayerGuide}>
+      <Modal visible={selectedPrayerGuide !== null || selectedAdditionalPrayerGuide !== null} transparent animationType="slide" onRequestClose={closePrayerGuide}>
         <View style={styles.modalBackdrop}>
           <View style={styles.prayerGuideModal}>
             <View style={styles.modalHeader}>
               <View style={styles.adjustmentsHeaderCopy}>
-                <Text style={styles.modalTitle}>{selectedPrayerGuide ? getPrayerLabel(selectedPrayerGuide, language) : copy.prayerGuide}</Text>
+                <Text style={styles.modalTitle}>
+                  {selectedPrayerGuide
+                    ? getPrayerLabel(selectedPrayerGuide, language)
+                    : selectedAdditionalPrayerGuide === 'Jumuah' ? copy.jumuaPrayer : selectedAdditionalPrayerGuide === 'Tahajjud' ? copy.tahajjudPrayer : copy.prayerGuide}
+                </Text>
                 <Text style={styles.modalSubtitle}>{copy.prayerGuide}</Text>
               </View>
               <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={closePrayerGuide}>
@@ -1187,6 +1268,22 @@ export default function App() {
                 ))}
                 <Text style={styles.prayerGuideNote}>{copy.guideNote}</Text>
                 {selectedPrayerGuide === 'Isha' ? <Text style={styles.prayerGuideNote}>{copy.witrGuide}</Text> : null}
+              </ScrollView>
+            ) : selectedAdditionalPrayerGuide ? (
+              <ScrollView style={styles.prayerGuideScroll} contentContainerStyle={styles.prayerGuideContent}>
+                <View style={styles.prayerGuideRakahBadge}>
+                  <Text style={styles.prayerGuideRakahText}>
+                    {selectedAdditionalPrayerGuide === 'Jumuah' ? copy.jumuahRakahs : copy.tahajjudRakahs}
+                  </Text>
+                </View>
+                <Text style={styles.prayerGuideSectionTitle}>{copy.guideSteps}</Text>
+                {(selectedAdditionalPrayerGuide === 'Jumuah' ? copy.jumuahGuideSteps : copy.tahajjudGuideSteps).map((step, index) => (
+                  <View key={`${selectedAdditionalPrayerGuide}-${index}`} style={styles.prayerGuideStep}>
+                    <Text style={styles.prayerGuideStepNumber}>{index + 1}</Text>
+                    <Text style={styles.prayerGuideStepText}>{step}</Text>
+                  </View>
+                ))}
+                {selectedAdditionalPrayerGuide === 'Jumuah' ? <Text style={styles.prayerGuideNote}>{copy.jumuahGuideNote}</Text> : null}
               </ScrollView>
             ) : null}
           </View>
@@ -1441,6 +1538,8 @@ const styles = StyleSheet.create({
   prayerGuideScroll: { flexShrink: 1 },
   prayerGuideContent: { paddingBottom: 12 },
   prayerGuideSectionTitle: { color: '#f5f1e6', fontSize: 15, fontWeight: '700', marginBottom: 10 },
+  prayerGuideRakahBadge: { alignSelf: 'flex-start', backgroundColor: '#244a43', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 18 },
+  prayerGuideRakahText: { color: '#f4c96d', fontSize: 12, fontWeight: '800' },
   prayerScheduleList: { borderRadius: 12, backgroundColor: '#244a43', paddingHorizontal: 12, marginBottom: 6 },
   prayerScheduleRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: '#41635c' },
   prayerScheduleCount: { width: 28, color: '#f4c96d', fontSize: 16, fontWeight: '900', textAlign: 'center' },
@@ -1502,6 +1601,14 @@ const styles = StyleSheet.create({
   progressTrack: { backgroundColor: '#c69d4c', height: 5, borderRadius: 3, marginTop: 22, overflow: 'hidden' },
   progressFill: { width: '42%', height: '100%', backgroundColor: '#173c37', borderRadius: 3 },
   mosqueNote: { color: '#78968b', fontSize: 11, lineHeight: 16, marginTop: 10 },
+  additionalPrayerCard: { backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 16, padding: 15, marginTop: 14 },
+  additionalPrayerHeading: { color: '#9bb5a7', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 8 },
+  additionalPrayerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#284945' },
+  additionalPrayerCopy: { flex: 1 },
+  additionalPrayerName: { color: '#f5f1e6', fontSize: 14, fontWeight: '700' },
+  additionalPrayerNote: { color: '#9bb5a7', fontSize: 10, lineHeight: 15, marginTop: 3 },
+  additionalPrayerBestTime: { color: '#f4c96d', fontSize: 10, lineHeight: 15, marginTop: 4 },
+  additionalPrayerTime: { maxWidth: 104, color: '#f4c96d', fontSize: 10, lineHeight: 14, fontWeight: '700', textAlign: 'right' },
   mosqueScheduleCard: { backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 16, padding: 15, marginTop: 16 },
   mosqueScheduleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   mosqueScheduleHeading: { flex: 1 },
