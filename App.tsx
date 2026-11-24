@@ -29,13 +29,19 @@ Notifications.setNotificationHandler({
   }),
 });
 
-type Prayer = { name: string; arabic: string; time: Date; endTime: Date; icon: string };
+type PrayerName = 'Fajr' | 'Dhuhr' | 'Asr' | 'Maghrib' | 'Isha';
+type Prayer = { name: PrayerName; arabic: string; time: Date; endTime: Date; icon: string };
 type CompletedPrayers = Record<string, boolean>;
+type PrayerReminderPreferences = Record<PrayerName, boolean>;
 type Language = 'en' | 'hi';
 
 const COPY = {
   en: {
     endsBy: 'Ends by',
+    reminderOnLabel: (name: string) => `Turn ${name} reminders off`,
+    reminderOffLabel: (name: string) => `Turn ${name} reminders on`,
+    noPrayerRemindersSelected: 'No prayers selected',
+    selectPrayerReminder: 'Choose at least one prayer below to get reminders.',
     companion: 'YOUR DAILY COMPANION', launchSubtitle: 'Prayer times, wherever you are', developed: 'DEVELOPED BY',
     finding: 'Finding your location', preparing: "Preparing today's prayer times", current: 'CURRENT LOCATION',
     unavailable: 'Location unavailable', update: 'UPDATE', chooseCity: 'Choose another city', next: 'NEXT PRAYER',
@@ -52,6 +58,10 @@ const COPY = {
     prayerBody: (name: string) => `It is time for ${name}.`, prayerTitle: (name: string) => `${name} prayer`,
   },
   hi: {
+    reminderOnLabel: (name: string) => `${name} reminders बंद करें`,
+    reminderOffLabel: (name: string) => `${name} reminders चालू करें`,
+    noPrayerRemindersSelected: 'कोई नमाज़ चुनी नहीं',
+    selectPrayerReminder: 'रिमाइंडर पाने के लिए नीचे कम से एक नमाज़ चुनें।',
     endsBy: 'आख़िरी समय',
     companion: 'आपका रोज़ाना साथी', launchSubtitle: 'जहाँ भी हों, नमाज़ का समय', developed: 'द्वारा विकसित',
     finding: 'आपकी लोकेशन खोज रहे हैं', preparing: 'आज के नमाज़ के समय तैयार हो रहे हैं', current: 'वर्तमान लोकेशन',
@@ -72,9 +82,18 @@ const COPY = {
 
 const FALLBACK_COORDINATES = { latitude: 26.1209, longitude: 85.3647 };
 const REMINDERS_STORAGE_KEY = 'azan-reminders-enabled';
+const PRAYER_REMINDERS_STORAGE_KEY = 'azan-prayer-reminder-preferences';
 const NOTIFICATION_CHANNEL_ID = 'azan-reminders-v3';
 const REMINDER_DATA_KEY = 'azanReminder';
 const REMINDER_DAYS_AHEAD = 8;
+const PRAYER_NAMES: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+const DEFAULT_PRAYER_REMINDERS: PrayerReminderPreferences = {
+  Fajr: true,
+  Dhuhr: true,
+  Asr: true,
+  Maghrib: true,
+  Isha: true,
+};
 const notificationSound = Constants.appOwnership === AppOwnership.Expo ? 'default' : 'azan.mp3';
 const PRAYER_LABELS = {
   Fajr: { en: 'Fajr', hi: 'फ़ज्र', descriptionEn: 'Dawn', descriptionHi: 'सुबह' },
@@ -161,10 +180,16 @@ async function enablePrayerReminders(
   latitude: number,
   longitude: number,
   language: Language,
-  options: { promptOnFailure?: boolean } = {},
+  options: { promptOnFailure?: boolean; prayerPreferences?: PrayerReminderPreferences } = {},
 ) {
   const copy = COPY[language];
   const promptOnFailure = options.promptOnFailure !== false;
+  const prayerPreferences = options.prayerPreferences ?? DEFAULT_PRAYER_REMINDERS;
+
+  if (!PRAYER_NAMES.some((name) => prayerPreferences[name])) {
+    if (promptOnFailure) Alert.alert(copy.noPrayerRemindersSelected, copy.selectPrayerReminder);
+    return false;
+  }
 
   if (Platform.OS === 'web') {
     if (promptOnFailure) {
@@ -196,6 +221,7 @@ async function enablePrayerReminders(
       const prayers = getPrayers(latitude, longitude, date);
 
       for (const prayer of prayers) {
+        if (!prayerPreferences[prayer.name]) continue;
         if (prayer.time.getTime() <= now + 15000) continue;
 
         await Notifications.scheduleNotificationAsync({
@@ -245,6 +271,8 @@ export default function App() {
   const [coordinates, setCoordinates] = useState(FALLBACK_COORDINATES);
   const [city, setCity] = useState('Muzaffarpur');
   const [remindersOn, setRemindersOn] = useState(false);
+  const [prayerReminderPreferences, setPrayerReminderPreferences] = useState(DEFAULT_PRAYER_REMINDERS);
+  const [prayerReminderPreferencesLoaded, setPrayerReminderPreferencesLoaded] = useState(false);
   const [now, setNow] = useState(new Date());
   const [locationLoading, setLocationLoading] = useState(true);
   const [initialLocationLoading, setInitialLocationLoading] = useState(true);
@@ -259,6 +287,7 @@ export default function App() {
   const [language, setLanguage] = useState<Language>('en');
 
   const copy = COPY[language];
+  const hasSelectedPrayerReminders = PRAYER_NAMES.some((name) => prayerReminderPreferences[name]);
 
   useEffect(() => {
     const timer = setTimeout(() => setShowLaunchScreen(false), 2200);
@@ -276,6 +305,26 @@ export default function App() {
       setCompletedPrayers(saved ? JSON.parse(saved) : {});
     }).catch(() => setCompletedPrayers({}));
   }, [getLocalDateKey(now)]);
+
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(PRAYER_REMINDERS_STORAGE_KEY).then((saved) => {
+      if (!saved) return;
+      const parsed = JSON.parse(saved) as Partial<PrayerReminderPreferences>;
+      const normalized = Object.fromEntries(
+        PRAYER_NAMES.map((name) => [
+          name,
+          typeof parsed[name] === 'boolean' ? parsed[name] : DEFAULT_PRAYER_REMINDERS[name],
+        ]),
+      ) as PrayerReminderPreferences;
+      if (!cancelled) setPrayerReminderPreferences(normalized);
+    }).catch(() => {
+      if (!cancelled) setPrayerReminderPreferences(DEFAULT_PRAYER_REMINDERS);
+    }).finally(() => {
+      if (!cancelled) setPrayerReminderPreferencesLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   async function loadLocation() {
     setLocationLoading(true);
@@ -351,20 +400,25 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
-    if (initialLocationLoading) return () => { cancelled = true; };
+    if (initialLocationLoading || !prayerReminderPreferencesLoaded) return () => { cancelled = true; };
 
     AsyncStorage.getItem(REMINDERS_STORAGE_KEY).then(async (saved) => {
       if (cancelled || saved !== 'true') return;
       setRemindersOn(true);
-      await enablePrayerReminders(coordinates.latitude, coordinates.longitude, language, {
-        promptOnFailure: false,
-      });
+      if (PRAYER_NAMES.some((name) => prayerReminderPreferences[name])) {
+        await enablePrayerReminders(coordinates.latitude, coordinates.longitude, language, {
+          promptOnFailure: false,
+          prayerPreferences: prayerReminderPreferences,
+        });
+      } else {
+        await cancelPrayerReminders();
+      }
     }).catch(() => {});
 
     return () => {
       cancelled = true;
     };
-  }, [coordinates.latitude, coordinates.longitude, language, todayKey, initialLocationLoading]);
+  }, [coordinates.latitude, coordinates.longitude, language, todayKey, initialLocationLoading, prayerReminderPreferencesLoaded, prayerReminderPreferences]);
 
   async function toggleReminders() {
     if (remindersOn) {
@@ -373,11 +427,22 @@ export default function App() {
       setRemindersOn(false);
       return;
     }
-    const enabled = await enablePrayerReminders(coordinates.latitude, coordinates.longitude, language);
+    const enabled = await enablePrayerReminders(coordinates.latitude, coordinates.longitude, language, {
+      prayerPreferences: prayerReminderPreferences,
+    });
     if (enabled) {
       await AsyncStorage.setItem(REMINDERS_STORAGE_KEY, 'true');
     }
     setRemindersOn(enabled);
+  }
+
+  async function togglePrayerReminder(prayerName: PrayerName) {
+    const updated = {
+      ...prayerReminderPreferences,
+      [prayerName]: !prayerReminderPreferences[prayerName],
+    };
+    setPrayerReminderPreferences(updated);
+    await AsyncStorage.setItem(PRAYER_REMINDERS_STORAGE_KEY, JSON.stringify(updated));
   }
 
   async function togglePrayerCompleted(prayerName: string) {
@@ -483,25 +548,46 @@ export default function App() {
             const isNext = prayer.name === nextPrayer.name;
             const completed = completedPrayers[prayer.name] === true;
             return (
-              <Pressable
+              <View
                 key={prayer.name}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: completed }}
-                onPress={() => togglePrayerCompleted(prayer.name)}
                 style={[styles.prayerRow, isNext && styles.activeRow, completed && styles.completedRow]}
               >
                 <View style={[styles.prayerIcon, isNext && styles.activeIcon]}><Text style={styles.iconText}>{prayer.icon}</Text></View>
                 <View style={styles.prayerName}><Text style={[styles.nameText, completed && styles.completedName]}>{getPrayerLabel(prayer.name, language)}</Text><Text style={styles.subText}>{copy.endsBy} {formatTime(prayer.endTime)}</Text></View>
                 <Text style={[styles.prayerTime, isNext && styles.activeTime]}>{formatTime(prayer.time)}</Text>
-                <View style={[styles.checkbox, completed && styles.checkboxChecked]}><Text style={styles.checkboxMark}>{completed ? '✓' : ''}</Text></View>
-              </Pressable>
+                <Pressable
+                  accessibilityRole="switch"
+                  accessibilityLabel={prayerReminderPreferences[prayer.name]
+                    ? copy.reminderOnLabel(getPrayerLabel(prayer.name, language))
+                    : copy.reminderOffLabel(getPrayerLabel(prayer.name, language))}
+                  accessibilityState={{ checked: prayerReminderPreferences[prayer.name] }}
+                  hitSlop={8}
+                  onPress={() => togglePrayerReminder(prayer.name)}
+                  style={styles.prayerReminderToggle}
+                >
+                  <Text style={[styles.prayerReminderIcon, !prayerReminderPreferences[prayer.name] && styles.prayerReminderIconOff]}>
+                    {prayerReminderPreferences[prayer.name] ? '🔔' : '🔕'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityLabel={getPrayerLabel(prayer.name, language)}
+                  accessibilityState={{ checked: completed }}
+                  hitSlop={6}
+                  onPress={() => togglePrayerCompleted(prayer.name)}
+                >
+                  <View style={[styles.checkbox, completed && styles.checkboxChecked]}>
+                    <Text style={styles.checkboxMark}>{completed ? '✓' : ''}</Text>
+                  </View>
+                </Pressable>
+              </View>
             );
           })}
         </View>
 
         <Pressable style={[styles.reminderButton, remindersOn && styles.reminderOn]} onPress={toggleReminders}>
           <Text style={styles.bell}>{remindersOn ? 'ON' : 'OFF'}</Text>
-          <View style={styles.reminderCopy}><Text style={styles.reminderTitle}>{remindersOn ? copy.remindersOn : copy.remindersOff}</Text><Text style={styles.reminderSub}>{remindersOn ? copy.scheduled : copy.neverMiss}</Text></View>
+          <View style={styles.reminderCopy}><Text style={styles.reminderTitle}>{remindersOn ? copy.remindersOn : copy.remindersOff}</Text><Text style={styles.reminderSub}>{remindersOn ? (hasSelectedPrayerReminders ? copy.scheduled : copy.noPrayerRemindersSelected) : copy.neverMiss}</Text></View>
           <Text style={styles.arrow}>{remindersOn ? 'OK' : '>'}</Text>
         </Pressable>
 
@@ -631,6 +717,9 @@ const styles = StyleSheet.create({
   subText: { color: '#85a198', fontSize: 11, marginTop: 2 },
   prayerTime: { color: '#dbe6dc', fontSize: 16, fontWeight: '700' },
   activeTime: { color: '#f4c96d' },
+  prayerReminderToggle: { width: 32, height: 36, alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
+  prayerReminderIcon: { fontSize: 17 },
+  prayerReminderIconOff: { opacity: 0.45 },
   checkbox: { width: 24, height: 24, borderRadius: 7, borderWidth: 1.5, borderColor: '#709287', alignItems: 'center', justifyContent: 'center', marginLeft: 12 },
   checkboxChecked: { backgroundColor: '#e2b65e', borderColor: '#e2b65e' },
   checkboxMark: { color: '#173c37', fontSize: 16, fontWeight: '900', lineHeight: 18 },
