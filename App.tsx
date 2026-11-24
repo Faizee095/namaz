@@ -33,6 +33,7 @@ type PrayerName = 'Fajr' | 'Dhuhr' | 'Asr' | 'Maghrib' | 'Isha';
 type Prayer = { name: PrayerName; arabic: string; time: Date; endTime: Date; icon: string };
 type CompletedPrayers = Record<string, boolean>;
 type PrayerReminderPreferences = Record<PrayerName, boolean>;
+type PrayerTimeAdjustments = Record<PrayerName, number>;
 type Language = 'en' | 'hi';
 
 const COPY = {
@@ -45,6 +46,14 @@ const COPY = {
     qibla: 'QIBLA DIRECTION',
     qiblaBearingLabel: 'Bearing from north',
     qiblaCompassHint: 'Point the top of your phone toward the arrow',
+    adjustTimes: 'Adjust times',
+    adjustPrayerTimes: 'Prayer time adjustments',
+    adjustmentHelp: 'Add or subtract minutes from calculated times.',
+    resetAdjustments: 'Reset to calculated times',
+    minute: 'min',
+    invalidAdjustment: 'That change would make a prayer window overlap its next boundary. Choose a smaller adjustment.',
+    decreaseAdjustmentLabel: (name: string) => `Decrease ${name} adjustment by one minute`,
+    increaseAdjustmentLabel: (name: string) => `Increase ${name} adjustment by one minute`,
     companion: 'YOUR DAILY COMPANION', launchSubtitle: 'Prayer times, wherever you are', developed: 'DEVELOPED BY',
     finding: 'Finding your location', preparing: "Preparing today's prayer times", current: 'CURRENT LOCATION',
     unavailable: 'Location unavailable', update: 'UPDATE', chooseCity: 'Choose another city', next: 'NEXT PRAYER',
@@ -61,6 +70,14 @@ const COPY = {
     prayerBody: (name: string) => `It is time for ${name}.`, prayerTitle: (name: string) => `${name} prayer`,
   },
   hi: {
+    adjustTimes: 'समय बदलें',
+    adjustPrayerTimes: 'नमाज़ के समय में बदलाव',
+    adjustmentHelp: 'हिसाब किए गए समय में मिनट जोड़ें या घटाएँ।',
+    resetAdjustments: 'हिसाब किए गए समय पर लौटें',
+    minute: 'मिनट',
+    invalidAdjustment: 'इस बदलाव से नमाज़ के समय की सीमा आगे की नमाज़ से टकराएगी। कम बदलाव चुनें।',
+    decreaseAdjustmentLabel: (name: string) => `${name} का समय एक मिनट घटाएँ`,
+    increaseAdjustmentLabel: (name: string) => `${name} का समय एक मिनट बढ़ाएँ`,
     qibla: 'क़िबला दिशा',
     qiblaBearingLabel: 'उत्तर से दिशा',
     qiblaCompassHint: 'फ़ोन का ऊपरी हिस्सा तीर की दिशा में रखें',
@@ -89,6 +106,7 @@ const COPY = {
 const FALLBACK_COORDINATES = { latitude: 26.1209, longitude: 85.3647 };
 const REMINDERS_STORAGE_KEY = 'azan-reminders-enabled';
 const PRAYER_REMINDERS_STORAGE_KEY = 'azan-prayer-reminder-preferences';
+const PRAYER_TIME_ADJUSTMENTS_STORAGE_KEY = 'azan-prayer-time-adjustments';
 const NOTIFICATION_CHANNEL_ID = 'azan-reminders-v3';
 const REMINDER_DATA_KEY = 'azanReminder';
 const REMINDER_DAYS_AHEAD = 8;
@@ -101,6 +119,14 @@ const DEFAULT_PRAYER_REMINDERS: PrayerReminderPreferences = {
   Maghrib: true,
   Isha: true,
 };
+const DEFAULT_PRAYER_TIME_ADJUSTMENTS: PrayerTimeAdjustments = {
+  Fajr: 0,
+  Dhuhr: 0,
+  Asr: 0,
+  Maghrib: 0,
+  Isha: 0,
+};
+const MAX_PRAYER_TIME_ADJUSTMENT_MINUTES = 30;
 const notificationSound = Constants.appOwnership === AppOwnership.Expo ? 'default' : 'azan.mp3';
 const PRAYER_LABELS = {
   Fajr: { en: 'Fajr', hi: 'फ़ज्र', descriptionEn: 'Dawn', descriptionHi: 'सुबह' },
@@ -143,22 +169,51 @@ function getLocalDateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function getPrayers(latitude: number, longitude: number, date: Date = new Date()): Prayer[] {
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60_000);
+}
+
+function getPrayers(
+  latitude: number,
+  longitude: number,
+  date: Date = new Date(),
+  adjustments: PrayerTimeAdjustments = DEFAULT_PRAYER_TIME_ADJUSTMENTS,
+): Prayer[] {
   const params = CalculationMethod.Karachi();
   params.madhab = Madhab.Hanafi;
   const coordinates = new Coordinates(latitude, longitude);
   const times = new PrayerTimes(coordinates, date, params);
+  const fajr = addMinutes(times.fajr, adjustments.Fajr);
+  const dhuhr = addMinutes(times.dhuhr, adjustments.Dhuhr);
+  const asr = addMinutes(times.asr, adjustments.Asr);
+  const maghrib = addMinutes(times.maghrib, adjustments.Maghrib);
+  const isha = addMinutes(times.isha, adjustments.Isha);
   const nextDate = new Date(date);
   nextDate.setDate(nextDate.getDate() + 1);
-  const nextFajr = new PrayerTimes(coordinates, nextDate, params).fajr;
+  const nextFajr = addMinutes(new PrayerTimes(coordinates, nextDate, params).fajr, adjustments.Fajr);
 
   return [
-    { name: 'Fajr', arabic: 'Dawn', time: times.fajr, endTime: times.sunrise, icon: '01' },
-    { name: 'Dhuhr', arabic: 'Noon', time: times.dhuhr, endTime: times.asr, icon: '02' },
-    { name: 'Asr', arabic: 'Afternoon', time: times.asr, endTime: times.maghrib, icon: '03' },
-    { name: 'Maghrib', arabic: 'Sunset', time: times.maghrib, endTime: times.isha, icon: '04' },
-    { name: 'Isha', arabic: 'Night', time: times.isha, endTime: nextFajr, icon: '05' },
+    { name: 'Fajr', arabic: 'Dawn', time: fajr, endTime: times.sunrise, icon: '01' },
+    { name: 'Dhuhr', arabic: 'Noon', time: dhuhr, endTime: asr, icon: '02' },
+    { name: 'Asr', arabic: 'Afternoon', time: asr, endTime: maghrib, icon: '03' },
+    { name: 'Maghrib', arabic: 'Sunset', time: maghrib, endTime: isha, icon: '04' },
+    { name: 'Isha', arabic: 'Night', time: isha, endTime: nextFajr, icon: '05' },
   ];
+}
+
+function arePrayerTimeAdjustmentsValid(
+  latitude: number,
+  longitude: number,
+  date: Date,
+  adjustments: PrayerTimeAdjustments,
+) {
+  const checkDate = new Date(date);
+  for (let dayOffset = 0; dayOffset < REMINDER_DAYS_AHEAD; dayOffset += 1) {
+    const prayers = getPrayers(latitude, longitude, checkDate, adjustments);
+    if (prayers.some((prayer) => prayer.time.getTime() >= prayer.endTime.getTime())) return false;
+    checkDate.setDate(checkDate.getDate() + 1);
+  }
+  return true;
 }
 
 function notificationsAllowed(permissions: Notifications.NotificationPermissionsStatus) {
@@ -199,11 +254,16 @@ async function enablePrayerReminders(
   latitude: number,
   longitude: number,
   language: Language,
-  options: { promptOnFailure?: boolean; prayerPreferences?: PrayerReminderPreferences } = {},
+  options: {
+    promptOnFailure?: boolean;
+    prayerPreferences?: PrayerReminderPreferences;
+    timeAdjustments?: PrayerTimeAdjustments;
+  } = {},
 ) {
   const copy = COPY[language];
   const promptOnFailure = options.promptOnFailure !== false;
   const prayerPreferences = options.prayerPreferences ?? DEFAULT_PRAYER_REMINDERS;
+  const timeAdjustments = options.timeAdjustments ?? DEFAULT_PRAYER_TIME_ADJUSTMENTS;
 
   if (!PRAYER_NAMES.some((name) => prayerPreferences[name])) {
     if (promptOnFailure) Alert.alert(copy.noPrayerRemindersSelected, copy.selectPrayerReminder);
@@ -237,7 +297,7 @@ async function enablePrayerReminders(
     for (let dayOffset = 0; dayOffset < REMINDER_DAYS_AHEAD; dayOffset += 1) {
       const date = new Date();
       date.setDate(date.getDate() + dayOffset);
-      const prayers = getPrayers(latitude, longitude, date);
+      const prayers = getPrayers(latitude, longitude, date, timeAdjustments);
 
       for (const prayer of prayers) {
         if (!prayerPreferences[prayer.name]) continue;
@@ -292,6 +352,8 @@ export default function App() {
   const [remindersOn, setRemindersOn] = useState(false);
   const [prayerReminderPreferences, setPrayerReminderPreferences] = useState(DEFAULT_PRAYER_REMINDERS);
   const [prayerReminderPreferencesLoaded, setPrayerReminderPreferencesLoaded] = useState(false);
+  const [prayerTimeAdjustments, setPrayerTimeAdjustments] = useState(DEFAULT_PRAYER_TIME_ADJUSTMENTS);
+  const [prayerTimeAdjustmentsLoaded, setPrayerTimeAdjustmentsLoaded] = useState(false);
   const [compassHeading, setCompassHeading] = useState<number | null>(null);
   const [now, setNow] = useState(new Date());
   const [locationLoading, setLocationLoading] = useState(true);
@@ -299,6 +361,7 @@ export default function App() {
   const [locationError, setLocationError] = useState(false);
   const [locationStatus, setLocationStatus] = useState('Tap to refresh');
   const [locationPickerOpen, setLocationPickerOpen] = useState(false);
+  const [timeAdjustmentsOpen, setTimeAdjustmentsOpen] = useState(false);
   const [locationQuery, setLocationQuery] = useState('');
   const [searchingLocation, setSearchingLocation] = useState(false);
   const [completedPrayers, setCompletedPrayers] = useState<CompletedPrayers>({});
@@ -312,6 +375,29 @@ export default function App() {
   useEffect(() => {
     const timer = setTimeout(() => setShowLaunchScreen(false), 2200);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(PRAYER_TIME_ADJUSTMENTS_STORAGE_KEY).then((saved) => {
+      if (!saved) return;
+      const parsed = JSON.parse(saved) as Partial<PrayerTimeAdjustments>;
+      const normalized = Object.fromEntries(
+        PRAYER_NAMES.map((name) => {
+          const value = parsed[name];
+          const adjustment = typeof value === 'number' && Number.isFinite(value)
+            ? Math.max(-MAX_PRAYER_TIME_ADJUSTMENT_MINUTES, Math.min(MAX_PRAYER_TIME_ADJUSTMENT_MINUTES, Math.trunc(value)))
+            : DEFAULT_PRAYER_TIME_ADJUSTMENTS[name];
+          return [name, adjustment];
+        }),
+      ) as PrayerTimeAdjustments;
+      if (!cancelled) setPrayerTimeAdjustments(normalized);
+    }).catch(() => {
+      if (!cancelled) setPrayerTimeAdjustments(DEFAULT_PRAYER_TIME_ADJUSTMENTS);
+    }).finally(() => {
+      if (!cancelled) setPrayerTimeAdjustmentsLoaded(true);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -431,8 +517,8 @@ export default function App() {
   const todayKey = getLocalDateKey(now);
   const prayers = useMemo(() => {
     const [year, month, day] = todayKey.split('-').map(Number);
-    return getPrayers(coordinates.latitude, coordinates.longitude, new Date(year, month - 1, day, 12));
-  }, [coordinates.latitude, coordinates.longitude, todayKey]);
+    return getPrayers(coordinates.latitude, coordinates.longitude, new Date(year, month - 1, day, 12), prayerTimeAdjustments);
+  }, [coordinates.latitude, coordinates.longitude, todayKey, prayerTimeAdjustments]);
   const nextPrayer = prayers.find((prayer) => prayer.time.getTime() > now.getTime()) || prayers[0];
   const minutesUntil = Math.max(0, Math.round((nextPrayer.time.getTime() - now.getTime()) / 60000));
   const countdown = minutesUntil >= 60
@@ -445,7 +531,9 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
-    if (initialLocationLoading || !prayerReminderPreferencesLoaded) return () => { cancelled = true; };
+    if (initialLocationLoading || !prayerReminderPreferencesLoaded || !prayerTimeAdjustmentsLoaded) {
+      return () => { cancelled = true; };
+    }
 
     AsyncStorage.getItem(REMINDERS_STORAGE_KEY).then(async (saved) => {
       if (cancelled || saved !== 'true') return;
@@ -454,6 +542,7 @@ export default function App() {
         await enablePrayerReminders(coordinates.latitude, coordinates.longitude, language, {
           promptOnFailure: false,
           prayerPreferences: prayerReminderPreferences,
+          timeAdjustments: prayerTimeAdjustments,
         });
       } else {
         await cancelPrayerReminders();
@@ -463,7 +552,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [coordinates.latitude, coordinates.longitude, language, todayKey, initialLocationLoading, prayerReminderPreferencesLoaded, prayerReminderPreferences]);
+  }, [coordinates.latitude, coordinates.longitude, language, todayKey, initialLocationLoading, prayerReminderPreferencesLoaded, prayerReminderPreferences, prayerTimeAdjustmentsLoaded, prayerTimeAdjustments]);
 
   async function toggleReminders() {
     if (remindersOn) {
@@ -474,6 +563,7 @@ export default function App() {
     }
     const enabled = await enablePrayerReminders(coordinates.latitude, coordinates.longitude, language, {
       prayerPreferences: prayerReminderPreferences,
+      timeAdjustments: prayerTimeAdjustments,
     });
     if (enabled) {
       await AsyncStorage.setItem(REMINDERS_STORAGE_KEY, 'true');
@@ -488,6 +578,27 @@ export default function App() {
     };
     setPrayerReminderPreferences(updated);
     await AsyncStorage.setItem(PRAYER_REMINDERS_STORAGE_KEY, JSON.stringify(updated));
+  }
+
+  async function changePrayerTimeAdjustment(prayerName: PrayerName, change: number) {
+    const updated = {
+      ...prayerTimeAdjustments,
+      [prayerName]: Math.max(
+        -MAX_PRAYER_TIME_ADJUSTMENT_MINUTES,
+        Math.min(MAX_PRAYER_TIME_ADJUSTMENT_MINUTES, prayerTimeAdjustments[prayerName] + change),
+      ),
+    };
+    if (!arePrayerTimeAdjustmentsValid(coordinates.latitude, coordinates.longitude, now, updated)) {
+      Alert.alert(copy.adjustPrayerTimes, copy.invalidAdjustment);
+      return;
+    }
+    setPrayerTimeAdjustments(updated);
+    await AsyncStorage.setItem(PRAYER_TIME_ADJUSTMENTS_STORAGE_KEY, JSON.stringify(updated));
+  }
+
+  async function resetPrayerTimeAdjustments() {
+    setPrayerTimeAdjustments(DEFAULT_PRAYER_TIME_ADJUSTMENTS);
+    await AsyncStorage.setItem(PRAYER_TIME_ADJUSTMENTS_STORAGE_KEY, JSON.stringify(DEFAULT_PRAYER_TIME_ADJUSTMENTS));
   }
 
   async function togglePrayerCompleted(prayerName: string) {
@@ -518,7 +629,7 @@ export default function App() {
     );
   }
 
-  if (initialLocationLoading) {
+  if (initialLocationLoading || !prayerTimeAdjustmentsLoaded) {
     return (
       <SafeAreaView style={styles.loadingScreen}>
         <StatusBar style="light" />
@@ -609,6 +720,11 @@ export default function App() {
           <Text style={styles.progressLabel}>{Object.values(completedPrayers).filter(Boolean).length}/5 {copy.done}</Text>
         </View>
 
+        <Pressable style={styles.adjustTimesButton} onPress={() => setTimeAdjustmentsOpen(true)}>
+          <Text style={styles.adjustTimesButtonText}>{copy.adjustTimes}</Text>
+          <Text style={styles.adjustTimesArrow}>›</Text>
+        </Pressable>
+
         <View style={styles.prayerList}>
           {prayers.map((prayer) => {
             const isNext = prayer.name === nextPrayer.name;
@@ -667,6 +783,55 @@ export default function App() {
           <Text style={styles.creditText}>Developed by MD Faiyazuddin</Text>
         </View>
       </ScrollView>
+      <Modal visible={timeAdjustmentsOpen} transparent animationType="slide" onRequestClose={() => setTimeAdjustmentsOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.adjustmentsModal}>
+            <View style={styles.modalHeader}>
+              <View style={styles.adjustmentsHeaderCopy}>
+                <Text style={styles.modalTitle}>{copy.adjustPrayerTimes}</Text>
+                <Text style={styles.modalSubtitle}>{copy.adjustmentHelp}</Text>
+              </View>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => setTimeAdjustmentsOpen(false)}>
+                <Text style={styles.closeButton}>X</Text>
+              </Pressable>
+            </View>
+            <View style={styles.adjustmentList}>
+              {PRAYER_NAMES.map((prayerName) => {
+                const adjustment = prayerTimeAdjustments[prayerName];
+                return (
+                  <View key={prayerName} style={styles.adjustmentRow}>
+                    <Text style={styles.adjustmentPrayerName}>{getPrayerLabel(prayerName, language)}</Text>
+                    <View style={styles.adjustmentControls}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={copy.decreaseAdjustmentLabel(getPrayerLabel(prayerName, language))}
+                        disabled={adjustment <= -MAX_PRAYER_TIME_ADJUSTMENT_MINUTES}
+                        onPress={() => changePrayerTimeAdjustment(prayerName, -1)}
+                        style={[styles.adjustmentStepButton, adjustment <= -MAX_PRAYER_TIME_ADJUSTMENT_MINUTES && styles.adjustmentStepButtonDisabled]}
+                      >
+                        <Text style={styles.adjustmentStepText}>−</Text>
+                      </Pressable>
+                      <Text style={styles.adjustmentValue}>{adjustment > 0 ? '+' : ''}{adjustment} {copy.minute}</Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={copy.increaseAdjustmentLabel(getPrayerLabel(prayerName, language))}
+                        disabled={adjustment >= MAX_PRAYER_TIME_ADJUSTMENT_MINUTES}
+                        onPress={() => changePrayerTimeAdjustment(prayerName, 1)}
+                        style={[styles.adjustmentStepButton, adjustment >= MAX_PRAYER_TIME_ADJUSTMENT_MINUTES && styles.adjustmentStepButtonDisabled]}
+                      >
+                        <Text style={styles.adjustmentStepText}>+</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+            <Pressable style={styles.resetAdjustmentsButton} onPress={resetPrayerTimeAdjustments}>
+              <Text style={styles.resetAdjustmentsText}>{copy.resetAdjustments}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
       <Modal visible={locationPickerOpen} transparent animationType="slide" onRequestClose={() => setLocationPickerOpen(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.locationModal}>
@@ -786,6 +951,9 @@ const styles = StyleSheet.create({
   sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 30, marginBottom: 13 },
   sectionTitle: { color: '#f5f1e6', fontSize: 20, fontWeight: '700' },
   progressLabel: { color: '#f4c96d', fontSize: 11, fontWeight: '700' },
+  adjustTimesButton: { backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 12, minHeight: 42, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  adjustTimesButtonText: { color: '#f4c96d', fontSize: 12, fontWeight: '700' },
+  adjustTimesArrow: { color: '#f4c96d', fontSize: 21, lineHeight: 22 },
   prayerList: { gap: 8 },
   prayerRow: { backgroundColor: '#1b3b38', borderRadius: 13, padding: 13, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#284945' },
   activeRow: { backgroundColor: '#244a43', borderColor: '#56806f' },
@@ -817,6 +985,18 @@ const styles = StyleSheet.create({
   clubLogo: { width: 34, height: 42, resizeMode: 'contain', marginBottom: 8 },
   creditText: { color: '#dbe6dc', fontSize: 12, fontWeight: '700' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 0, 0, 0.55)' },
+  adjustmentsModal: { backgroundColor: '#173c37', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 22, paddingTop: 24, paddingBottom: 32, maxHeight: '82%' },
+  adjustmentsHeaderCopy: { flex: 1, paddingRight: 12 },
+  adjustmentList: { gap: 8 },
+  adjustmentRow: { minHeight: 58, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: '#244a43', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  adjustmentPrayerName: { color: '#f5f1e6', fontSize: 15, fontWeight: '700' },
+  adjustmentControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  adjustmentStepButton: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#e2b65e', alignItems: 'center', justifyContent: 'center' },
+  adjustmentStepButtonDisabled: { opacity: 0.4 },
+  adjustmentStepText: { color: '#173c37', fontSize: 22, lineHeight: 25, fontWeight: '800' },
+  adjustmentValue: { width: 70, color: '#f5f1e6', fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  resetAdjustmentsButton: { minHeight: 46, marginTop: 14, borderRadius: 12, borderWidth: 1, borderColor: '#56806f', alignItems: 'center', justifyContent: 'center' },
+  resetAdjustmentsText: { color: '#f4c96d', fontSize: 13, fontWeight: '700' },
   locationModal: { backgroundColor: '#173c37', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 34 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
   modalTitle: { color: '#f5f1e6', fontSize: 24, fontWeight: '800' },
