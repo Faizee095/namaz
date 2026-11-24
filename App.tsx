@@ -45,9 +45,14 @@ type PrayerAudioTrack = { id: string; label: Record<Language, string>; url: stri
 
 const COPY = {
   en: {
+    moreTools: 'More tools',
+    showMoreTools: 'Show Qibla, extra prayers, progress and mosque times',
+    hideMoreTools: 'Hide extra tools',
     endsBy: 'Ends by',
     reminderOnLabel: (name: string) => `Turn ${name} reminders off`,
     reminderOffLabel: (name: string) => `Turn ${name} reminders on`,
+    toggleRemindersOn: 'Turn prayer reminders on',
+    toggleRemindersOff: 'Turn prayer reminders off',
     noPrayerRemindersSelected: 'No prayers selected',
     selectPrayerReminder: 'Choose at least one prayer below to get reminders.',
     qibla: 'QIBLA DIRECTION',
@@ -135,6 +140,11 @@ const COPY = {
     prayerBody: (name: string) => `It is time for ${name}.`, prayerTitle: (name: string) => `${name} prayer`,
   },
   hi: {
+    toggleRemindersOn: 'नमाज़ के रिमाइंडर चालू करें',
+    toggleRemindersOff: 'नमाज़ के रिमाइंडर बंद करें',
+    moreTools: 'और सुविधाएँ',
+    showMoreTools: 'क़िबला, अतिरिक्त नमाज़, प्रगति और मस्जिद का समय देखें',
+    hideMoreTools: 'अतिरिक्त सुविधाएँ छिपाएँ',
     adjustTimes: 'समय बदलें',
     adjustPrayerTimes: 'नमाज़ के समय में बदलाव',
     adjustmentHelp: 'हिसाब किए गए समय में मिनट जोड़ें या घटाएँ।',
@@ -544,6 +554,7 @@ export default function App() {
   const [mosqueSchedule, setMosqueSchedule] = useState(EMPTY_MOSQUE_SCHEDULE);
   const [mosqueScheduleDraft, setMosqueScheduleDraft] = useState(EMPTY_MOSQUE_SCHEDULE);
   const [mosqueScheduleOpen, setMosqueScheduleOpen] = useState(false);
+  const [moreToolsOpen, setMoreToolsOpen] = useState(false);
   const [monthlyTimetableOpen, setMonthlyTimetableOpen] = useState(false);
   const [selectedPrayerGuide, setSelectedPrayerGuide] = useState<PrayerName | null>(null);
   const [selectedAdditionalPrayerGuide, setSelectedAdditionalPrayerGuide] = useState<'Jumuah' | 'Tahajjud' | null>(null);
@@ -561,7 +572,6 @@ export default function App() {
   const [language, setLanguage] = useState<Language>('en');
 
   const copy = COPY[language];
-  const hasSelectedPrayerReminders = PRAYER_NAMES.some((name) => prayerReminderPreferences[name]);
 
   useEffect(() => {
     const timer = setTimeout(() => setShowLaunchScreen(false), 2200);
@@ -987,9 +997,20 @@ export default function App() {
             <Text style={styles.eyebrow}>{copy.companion}</Text>
             <Text style={styles.title}>Azan</Text>
           </View>
-          <Pressable style={styles.languageButton} onPress={() => setLanguage(language === 'en' ? 'hi' : 'en')}>
-            <Text style={styles.languageButtonText}>{language === 'en' ? 'हिंदी' : 'EN'}</Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityLabel={remindersOn ? copy.toggleRemindersOff : copy.toggleRemindersOn}
+              accessibilityState={{ checked: remindersOn }}
+              onPress={toggleReminders}
+              style={[styles.headerReminderButton, remindersOn && styles.headerReminderButtonOn]}
+            >
+              <Text style={[styles.headerReminderIcon, remindersOn && styles.headerReminderIconOn]}>{remindersOn ? '\u{1F514}' : '\u{1F515}'}</Text>
+            </Pressable>
+            <Pressable style={styles.languageButton} onPress={() => setLanguage(language === 'en' ? 'hi' : 'en')}>
+              <Text style={styles.languageButtonText}>{language === 'en' ? 'हिंदी' : 'EN'}</Text>
+            </Pressable>
+          </View>
         </View>
 
         <Pressable
@@ -1030,50 +1051,10 @@ export default function App() {
           <View style={styles.progressTrack}><View style={styles.progressFill} /></View>
         </View>
 
-        <View style={styles.qiblaCard}>
-          <View style={styles.qiblaCopy}>
-            <Text style={styles.qiblaTitle}>{copy.qibla}</Text>
-            <Text style={styles.qiblaBearing}>{Math.round(qiblaBearing)}°</Text>
-            <Text style={styles.qiblaSubtitle}>{copy.qiblaBearingLabel}</Text>
-            {compassHeading !== null && <Text style={styles.qiblaHint}>{copy.qiblaCompassHint}</Text>}
-            <Text style={styles.qiblaLocation}>{city}</Text>
-          </View>
-          <View style={styles.compassDial}>
-            <Text style={styles.compassNorth}>N</Text>
-            <Text style={styles.compassEast}>E</Text>
-            <Text style={styles.compassSouth}>S</Text>
-            <Text style={styles.compassWest}>W</Text>
-            <View style={[styles.compassPointer, { transform: [{ rotate: `${compassRotation}deg` }] }]}>
-              <Text style={styles.compassPointerHead}>▲</Text>
-              <View style={styles.compassPointerTail} />
-            </View>
-            <View style={styles.compassCenter} />
-          </View>
-        </View>
-
-        <Pressable
-          accessibilityRole="button"
-          style={styles.monthlyTimetableButton}
-          onPress={() => {
-            setDisplayMonth(new Date(now.getFullYear(), now.getMonth(), 1));
-            setMonthlyTimetableOpen(true);
-          }}
-        >
-          <Text style={styles.monthlyTimetableButtonText}>{copy.monthlyTimetable}</Text>
-          <Text style={styles.monthlyTimetableArrow}>›</Text>
-        </Pressable>
-
-        <Text style={styles.mosqueNote}>{copy.mosqueNote}</Text>
-
         <View style={styles.sectionHeading}>
           <Text style={styles.sectionTitle}>{copy.today}</Text>
           <Text style={styles.progressLabel}>{Object.values(completedPrayers).filter(Boolean).length}/5 {copy.done}</Text>
         </View>
-
-        <Pressable style={styles.adjustTimesButton} onPress={() => setTimeAdjustmentsOpen(true)}>
-          <Text style={styles.adjustTimesButtonText}>{copy.adjustTimes}</Text>
-          <Text style={styles.adjustTimesArrow}>›</Text>
-        </Pressable>
 
         <View style={styles.prayerList}>
           {prayers.map((prayer) => {
@@ -1126,6 +1107,62 @@ export default function App() {
             );
           })}
         </View>
+
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: moreToolsOpen }}
+          onPress={() => setMoreToolsOpen((open) => !open)}
+          style={styles.moreToolsToggle}
+        >
+          <View style={styles.moreToolsCopy}>
+            <Text style={styles.moreToolsTitle}>{copy.moreTools}</Text>
+            <Text style={styles.moreToolsHint}>{moreToolsOpen ? copy.hideMoreTools : copy.showMoreTools}</Text>
+          </View>
+          <Text style={styles.moreToolsArrow}>{moreToolsOpen ? '\u2212' : '+'}</Text>
+        </Pressable>
+
+        {moreToolsOpen ? (
+          <View>
+        <View style={styles.qiblaCard}>
+          <View style={styles.qiblaCopy}>
+            <Text style={styles.qiblaTitle}>{copy.qibla}</Text>
+            <Text style={styles.qiblaBearing}>{Math.round(qiblaBearing)}°</Text>
+            <Text style={styles.qiblaSubtitle}>{copy.qiblaBearingLabel}</Text>
+            {compassHeading !== null && <Text style={styles.qiblaHint}>{copy.qiblaCompassHint}</Text>}
+            <Text style={styles.qiblaLocation}>{city}</Text>
+          </View>
+          <View style={styles.compassDial}>
+            <Text style={styles.compassNorth}>N</Text>
+            <Text style={styles.compassEast}>E</Text>
+            <Text style={styles.compassSouth}>S</Text>
+            <Text style={styles.compassWest}>W</Text>
+            <View style={[styles.compassPointer, { transform: [{ rotate: `${compassRotation}deg` }] }]}>
+              <Text style={styles.compassPointerHead}>▲</Text>
+              <View style={styles.compassPointerTail} />
+            </View>
+            <View style={styles.compassCenter} />
+          </View>
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          style={styles.monthlyTimetableButton}
+          onPress={() => {
+            setDisplayMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+            setMonthlyTimetableOpen(true);
+          }}
+        >
+          <Text style={styles.monthlyTimetableButtonText}>{copy.monthlyTimetable}</Text>
+          <Text style={styles.monthlyTimetableArrow}>›</Text>
+        </Pressable>
+
+        <Text style={styles.mosqueNote}>{copy.mosqueNote}</Text>
+
+        <Pressable style={styles.adjustTimesButton} onPress={() => setTimeAdjustmentsOpen(true)}>
+          <Text style={styles.adjustTimesButtonText}>{copy.adjustTimes}</Text>
+          <Text style={styles.adjustTimesArrow}>›</Text>
+        </Pressable>
 
         <View style={styles.additionalPrayerCard}>
           <Text style={styles.additionalPrayerHeading}>{copy.additionalPrayerTimes}</Text>
@@ -1193,11 +1230,9 @@ export default function App() {
           )}
         </View>
 
-        <Pressable style={[styles.reminderButton, remindersOn && styles.reminderOn]} onPress={toggleReminders}>
-          <Text style={styles.bell}>{remindersOn ? 'ON' : 'OFF'}</Text>
-          <View style={styles.reminderCopy}><Text style={styles.reminderTitle}>{remindersOn ? copy.remindersOn : copy.remindersOff}</Text><Text style={styles.reminderSub}>{remindersOn ? (hasSelectedPrayerReminders ? copy.scheduled : copy.noPrayerRemindersSelected) : copy.neverMiss}</Text></View>
-          <Text style={styles.arrow}>{remindersOn ? 'OK' : '>'}</Text>
-        </Pressable>
+          </View>
+        ) : null}
+
 
         <Text style={styles.footer}>{copy.selectedTimes}</Text>
         <View style={styles.creditFooter}>
@@ -1504,10 +1539,15 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
     backgroundColor: '#102c2b',
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   eyebrow: { color: '#9bb5a7', fontSize: 11, letterSpacing: 1.5, fontWeight: '700' },
   title: { color: '#f5f1e6', fontSize: 42, fontWeight: '800', marginTop: 3 },
-  languageButton: { borderWidth: 1, borderColor: '#56806f', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginTop: 5 },
+  headerReminderButton: { width: 42, height: 42, borderRadius: 14, borderWidth: 1, borderColor: '#41635c', backgroundColor: '#1b3b38', alignItems: 'center', justifyContent: 'center' },
+  headerReminderButtonOn: { borderColor: '#e2b65e', backgroundColor: '#244a43' },
+  headerReminderIcon: { fontSize: 19, opacity: 0.65 },
+  headerReminderIconOn: { opacity: 1 },
+  languageButton: { borderWidth: 1, borderColor: '#56806f', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   languageButtonText: { color: '#f4c96d', fontSize: 12, fontWeight: '800' },
   locationCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 16, padding: 14, marginTop: 20, marginBottom: 20 },
   locationCardError: { borderColor: '#a76e5e' },
@@ -1622,7 +1662,12 @@ const styles = StyleSheet.create({
   mosquePrayerName: { color: '#dbe6dc', fontSize: 13, fontWeight: '600' },
   mosquePrayerTime: { color: '#f4c96d', fontSize: 13, fontWeight: '700' },
   mosqueScheduleNote: { color: '#85a198', fontSize: 10, lineHeight: 15, marginTop: 8 },
-  sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 30, marginBottom: 13 },
+  sectionHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 24, marginBottom: 13 },
+  moreToolsToggle: { backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 14, paddingHorizontal: 15, paddingVertical: 13, marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  moreToolsCopy: { flex: 1, paddingRight: 12 },
+  moreToolsTitle: { color: '#f5f1e6', fontSize: 14, fontWeight: '700' },
+  moreToolsHint: { color: '#9bb5a7', fontSize: 11, marginTop: 3 },
+  moreToolsArrow: { color: '#f4c96d', fontSize: 22, fontWeight: '600' },
   sectionTitle: { color: '#f5f1e6', fontSize: 20, fontWeight: '700' },
   progressLabel: { color: '#f4c96d', fontSize: 11, fontWeight: '700' },
   adjustTimesButton: { backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 12, minHeight: 42, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
@@ -1647,13 +1692,6 @@ const styles = StyleSheet.create({
   checkbox: { width: 24, height: 24, borderRadius: 7, borderWidth: 1.5, borderColor: '#709287', alignItems: 'center', justifyContent: 'center', marginLeft: 12 },
   checkboxChecked: { backgroundColor: '#e2b65e', borderColor: '#e2b65e' },
   checkboxMark: { color: '#173c37', fontSize: 16, fontWeight: '900', lineHeight: 18 },
-  reminderButton: { backgroundColor: '#f5f1e6', borderRadius: 14, padding: 15, marginTop: 24, flexDirection: 'row', alignItems: 'center' },
-  reminderOn: { backgroundColor: '#dce9dd' },
-  bell: { color: '#173c37', fontSize: 11, fontWeight: '900', width: 34 },
-  reminderCopy: { flex: 1 },
-  reminderTitle: { color: '#173c37', fontSize: 15, fontWeight: '800' },
-  reminderSub: { color: '#5d756d', fontSize: 11, marginTop: 3 },
-  arrow: { color: '#173c37', fontSize: 13, fontWeight: '900' },
   footer: { color: '#6f9083', fontSize: 11, textAlign: 'center', marginTop: 18 },
   creditFooter: { alignItems: 'center', marginTop: 24, paddingTop: 18, borderTopWidth: 1, borderTopColor: '#284945' },
   clubLogo: { width: 34, height: 42, resizeMode: 'contain', marginBottom: 8 },
