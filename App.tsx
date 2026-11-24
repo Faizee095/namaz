@@ -42,6 +42,9 @@ const COPY = {
     reminderOffLabel: (name: string) => `Turn ${name} reminders on`,
     noPrayerRemindersSelected: 'No prayers selected',
     selectPrayerReminder: 'Choose at least one prayer below to get reminders.',
+    qibla: 'QIBLA DIRECTION',
+    qiblaBearingLabel: 'Bearing from north',
+    qiblaCompassHint: 'Point the top of your phone toward the arrow',
     companion: 'YOUR DAILY COMPANION', launchSubtitle: 'Prayer times, wherever you are', developed: 'DEVELOPED BY',
     finding: 'Finding your location', preparing: "Preparing today's prayer times", current: 'CURRENT LOCATION',
     unavailable: 'Location unavailable', update: 'UPDATE', chooseCity: 'Choose another city', next: 'NEXT PRAYER',
@@ -58,6 +61,9 @@ const COPY = {
     prayerBody: (name: string) => `It is time for ${name}.`, prayerTitle: (name: string) => `${name} prayer`,
   },
   hi: {
+    qibla: 'क़िबला दिशा',
+    qiblaBearingLabel: 'उत्तर से दिशा',
+    qiblaCompassHint: 'फ़ोन का ऊपरी हिस्सा तीर की दिशा में रखें',
     reminderOnLabel: (name: string) => `${name} reminders बंद करें`,
     reminderOffLabel: (name: string) => `${name} reminders चालू करें`,
     noPrayerRemindersSelected: 'कोई नमाज़ चुनी नहीं',
@@ -86,6 +92,7 @@ const PRAYER_REMINDERS_STORAGE_KEY = 'azan-prayer-reminder-preferences';
 const NOTIFICATION_CHANNEL_ID = 'azan-reminders-v3';
 const REMINDER_DATA_KEY = 'azanReminder';
 const REMINDER_DAYS_AHEAD = 8;
+const KAABA_COORDINATES = { latitude: 21.4225, longitude: 39.8262 };
 const PRAYER_NAMES: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 const DEFAULT_PRAYER_REMINDERS: PrayerReminderPreferences = {
   Fajr: true,
@@ -115,6 +122,18 @@ function getPrayerDescription(name: string, language: Language) {
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function getQiblaBearing(latitude: number, longitude: number) {
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const toDegrees = (radians: number) => (radians * 180) / Math.PI;
+  const latitudeRadians = toRadians(latitude);
+  const kaabaLatitudeRadians = toRadians(KAABA_COORDINATES.latitude);
+  const longitudeDifference = toRadians(KAABA_COORDINATES.longitude - longitude);
+  const y = Math.sin(longitudeDifference) * Math.cos(kaabaLatitudeRadians);
+  const x = Math.cos(latitudeRadians) * Math.sin(kaabaLatitudeRadians)
+    - Math.sin(latitudeRadians) * Math.cos(kaabaLatitudeRadians) * Math.cos(longitudeDifference);
+  return (toDegrees(Math.atan2(y, x)) + 360) % 360;
 }
 
 function getLocalDateKey(date: Date) {
@@ -273,6 +292,7 @@ export default function App() {
   const [remindersOn, setRemindersOn] = useState(false);
   const [prayerReminderPreferences, setPrayerReminderPreferences] = useState(DEFAULT_PRAYER_REMINDERS);
   const [prayerReminderPreferencesLoaded, setPrayerReminderPreferencesLoaded] = useState(false);
+  const [compassHeading, setCompassHeading] = useState<number | null>(null);
   const [now, setNow] = useState(new Date());
   const [locationLoading, setLocationLoading] = useState(true);
   const [initialLocationLoading, setInitialLocationLoading] = useState(true);
@@ -297,6 +317,29 @@ export default function App() {
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    let active = true;
+    let subscription: Location.LocationSubscription | null = null;
+
+    Location.watchHeadingAsync((heading) => {
+      const direction = heading.trueHeading;
+      if (active) setCompassHeading(Number.isFinite(direction) && direction >= 0 ? direction : null);
+    }, () => {
+      if (active) setCompassHeading(null);
+    }).then((watcher) => {
+      if (active) subscription = watcher;
+      else watcher.remove();
+    }).catch(() => {
+      if (active) setCompassHeading(null);
+    });
+
+    return () => {
+      active = false;
+      subscription?.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -396,6 +439,8 @@ export default function App() {
     ? `${Math.floor(minutesUntil / 60)}h ${minutesUntil % 60}m`
     : `${minutesUntil}m`;
   const dateLabel = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  const qiblaBearing = getQiblaBearing(coordinates.latitude, coordinates.longitude);
+  const compassRotation = qiblaBearing - (compassHeading ?? 0);
 
   useEffect(() => {
     let cancelled = false;
@@ -534,6 +579,27 @@ export default function App() {
             <Text style={styles.countdownLabel}>{copy.until}</Text>
           </View>
           <View style={styles.progressTrack}><View style={styles.progressFill} /></View>
+        </View>
+
+        <View style={styles.qiblaCard}>
+          <View style={styles.qiblaCopy}>
+            <Text style={styles.qiblaTitle}>{copy.qibla}</Text>
+            <Text style={styles.qiblaBearing}>{Math.round(qiblaBearing)}°</Text>
+            <Text style={styles.qiblaSubtitle}>{copy.qiblaBearingLabel}</Text>
+            {compassHeading !== null && <Text style={styles.qiblaHint}>{copy.qiblaCompassHint}</Text>}
+            <Text style={styles.qiblaLocation}>{city}</Text>
+          </View>
+          <View style={styles.compassDial}>
+            <Text style={styles.compassNorth}>N</Text>
+            <Text style={styles.compassEast}>E</Text>
+            <Text style={styles.compassSouth}>S</Text>
+            <Text style={styles.compassWest}>W</Text>
+            <View style={[styles.compassPointer, { transform: [{ rotate: `${compassRotation}deg` }] }]}>
+              <Text style={styles.compassPointerHead}>▲</Text>
+              <View style={styles.compassPointerTail} />
+            </View>
+            <View style={styles.compassCenter} />
+          </View>
         </View>
 
         <Text style={styles.mosqueNote}>{copy.mosqueNote}</Text>
@@ -690,6 +756,22 @@ const styles = StyleSheet.create({
   changeLocationArrow: { color: '#f4c96d', fontSize: 22, lineHeight: 18 },
   date: { color: '#9bb5a7', fontSize: 15, marginBottom: 25 },
   nextCard: { backgroundColor: '#e2b65e', borderRadius: 18, padding: 22, minHeight: 196 },
+  qiblaCard: { backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 16, padding: 16, marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  qiblaCopy: { flex: 1, paddingRight: 12 },
+  qiblaTitle: { color: '#9bb5a7', fontSize: 10, fontWeight: '800', letterSpacing: 1.1 },
+  qiblaBearing: { color: '#f4c96d', fontSize: 30, fontWeight: '800', marginTop: 5 },
+  qiblaSubtitle: { color: '#dbe6dc', fontSize: 11, marginTop: 1 },
+  qiblaHint: { color: '#9bb5a7', fontSize: 10, lineHeight: 14, marginTop: 4 },
+  qiblaLocation: { color: '#85a198', fontSize: 10, marginTop: 5 },
+  compassDial: { width: 92, height: 92, borderRadius: 46, borderWidth: 1, borderColor: '#56806f', alignItems: 'center', justifyContent: 'center', backgroundColor: '#173c37' },
+  compassNorth: { position: 'absolute', top: 5, color: '#f4c96d', fontSize: 9, fontWeight: '900' },
+  compassEast: { position: 'absolute', right: 7, color: '#9bb5a7', fontSize: 8, fontWeight: '700' },
+  compassSouth: { position: 'absolute', bottom: 5, color: '#9bb5a7', fontSize: 8, fontWeight: '700' },
+  compassWest: { position: 'absolute', left: 7, color: '#9bb5a7', fontSize: 8, fontWeight: '700' },
+  compassPointer: { position: 'absolute', width: 24, height: 58, alignItems: 'center', justifyContent: 'flex-start' },
+  compassPointerHead: { color: '#e2b65e', fontSize: 19, lineHeight: 22 },
+  compassPointerTail: { width: 3, height: 25, borderRadius: 2, backgroundColor: '#e2b65e' },
+  compassCenter: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#f5f1e6', position: 'absolute' },
   nextTopline: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   nextLabel: { color: '#5d4b24', fontSize: 11, letterSpacing: 1.4, fontWeight: '800' },
   nextTime: { color: '#5d4b24', fontSize: 17, fontWeight: '700' },
