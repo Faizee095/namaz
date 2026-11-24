@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Image,
   Modal,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -42,6 +43,7 @@ const COPY = {
     searchPlaceholder: 'Search city or country', useLocation: 'Use this location', quick: 'QUICK LOCATIONS', completed: 'DONE',
     wellDone: 'Well done', allDone: 'You completed all five prayers for today.', continue: 'Continue',
     notificationsOff: 'Notifications are off', enableNotifications: 'Enable notifications in your device settings to receive reminders.',
+    remindersFailed: 'Could not schedule reminders', remindersFailedBody: 'Notification permission or exact alarms may be blocked. Enable notifications and Alarms & reminders for Azan in system settings, then try again.',
     locationNotFound: 'Location not found', tryCity: 'Try a city and country, such as London, United Kingdom.',
     searchFailed: 'Could not search location', checkInternet: 'Check your internet connection and try again.',
     updating: 'Updating location...', permission: 'Location permission is needed', updated: 'Prayer times updated', failed: 'Could not update location',
@@ -57,6 +59,7 @@ const COPY = {
     searchPlaceholder: 'शहर या देश खोजें', useLocation: 'यह लोकेशन चुनें', quick: 'जल्दी चुनें', completed: 'पूरा',
     wellDone: 'बहुत अच्छा', allDone: 'आज की पाँचों नमाज़ पूरी हो गईं।', continue: 'जारी रखें',
     notificationsOff: 'नोटिफिकेशन बंद हैं', enableNotifications: 'रिमाइंडर पाने के लिए डिवाइस सेटिंग्स में नोटिफिकेशन चालू करें।',
+    remindersFailed: 'रिमाइंडर सेट नहीं हो सके', remindersFailedBody: 'नोटिफिकेशन या सटीक अलार्म बंद हो सकते हैं। सिस्टम सेटिंग्स में Azan के नोटिफिकेशन और Alarms & reminders चालू करके फिर कोशिश करें।',
     locationNotFound: 'लोकेशन नहीं मिली', tryCity: 'शहर और देश लिखें, जैसे London, United Kingdom।',
     searchFailed: 'लोकेशन खोज नहीं सके', checkInternet: 'इंटरनेट कनेक्शन जाँचकर फिर कोशिश करें।',
     updating: 'लोकेशन अपडेट हो रही है...', permission: 'लोकेशन की अनुमति ज़रूरी है', updated: 'नमाज़ के समय अपडेट हो गए', failed: 'लोकेशन अपडेट नहीं हो सकी',
@@ -65,6 +68,9 @@ const COPY = {
 } as const;
 
 const FALLBACK_COORDINATES = { latitude: 26.1209, longitude: 85.3647 };
+const REMINDERS_STORAGE_KEY = 'azan-reminders-enabled';
+const NOTIFICATION_CHANNEL_ID = 'azan-reminders-v3';
+const REMINDER_DAYS_AHEAD = 8;
 const PRAYER_LABELS = {
   Fajr: { en: 'Fajr', hi: 'फ़ज्र', descriptionEn: 'Dawn', descriptionHi: 'सुबह' },
   Dhuhr: { en: 'Dhuhr', hi: 'ज़ुहर', descriptionEn: 'Noon', descriptionHi: 'दोपहर' },
@@ -94,10 +100,10 @@ function getLocalDateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function getPrayers(latitude: number, longitude: number): Prayer[] {
+function getPrayers(latitude: number, longitude: number, date: Date = new Date()): Prayer[] {
   const params = CalculationMethod.Karachi();
   params.madhab = Madhab.Hanafi;
-  const times = new PrayerTimes(new Coordinates(latitude, longitude), new Date(), params);
+  const times = new PrayerTimes(new Coordinates(latitude, longitude), date, params);
 
   return [
     { name: 'Fajr', arabic: 'Dawn', time: times.fajr, icon: '01' },
@@ -108,41 +114,113 @@ function getPrayers(latitude: number, longitude: number): Prayer[] {
   ];
 }
 
-async function enablePrayerReminders(prayers: Prayer[], language: Language) {
-  const copy = COPY[language];
-  await Notifications.setNotificationChannelAsync('azan-reminders-v2', {
+function notificationsAllowed(permissions: Notifications.NotificationPermissionsStatus) {
+  return (
+    permissions.granted
+    || permissions.status === 'granted'
+    || permissions.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+  );
+}
+
+async function ensureNotificationChannel() {
+  if (Platform.OS !== 'android') return;
+
+  const channel: Notifications.NotificationChannelInput = {
     name: 'Prayer reminders',
     importance: Notifications.AndroidImportance.MAX,
     sound: 'azan.mp3',
     vibrationPattern: [0, 250, 250, 250],
-  });
+    enableVibrate: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    audioAttributes: {
+      usage: Notifications.AndroidAudioUsage.ALARM,
+      contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+    },
+  };
 
-  const permissions = await Notifications.requestPermissionsAsync({
-    ios: { allowAlert: true, allowBadge: false, allowSound: true },
-  });
-  if (!permissions.granted) {
-    Alert.alert(copy.notificationsOff, copy.enableNotifications);
+  try {
+    await Notifications.setNotificationChannelAsync(NOTIFICATION_CHANNEL_ID, {
+      ...channel,
+      bypassDnd: true,
+    });
+  } catch {
+    await Notifications.setNotificationChannelAsync(NOTIFICATION_CHANNEL_ID, channel);
+  }
+}
+
+async function enablePrayerReminders(
+  latitude: number,
+  longitude: number,
+  language: Language,
+  options: { promptOnFailure?: boolean } = {},
+) {
+  const copy = COPY[language];
+  const promptOnFailure = options.promptOnFailure !== false;
+
+  if (Platform.OS === 'web') {
+    if (promptOnFailure) {
+      Alert.alert(copy.remindersFailed, copy.remindersFailedBody);
+    }
     return false;
   }
 
-  await Notifications.cancelAllScheduledNotificationsAsync();
-  for (const prayer of prayers) {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: copy.prayerTitle(getPrayerLabel(prayer.name, language)),
-        body: copy.prayerBody(getPrayerLabel(prayer.name, language)),
-        sound: 'azan.mp3',
-        data: { prayer: prayer.name },
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour: prayer.time.getHours(),
-        minute: prayer.time.getMinutes(),
-        channelId: 'azan-reminders-v2',
-      },
+  try {
+    await ensureNotificationChannel();
+
+    const permissions = await Notifications.requestPermissionsAsync({
+      ios: { allowAlert: true, allowBadge: false, allowSound: true },
     });
+    if (!notificationsAllowed(permissions)) {
+      if (promptOnFailure) {
+        Alert.alert(copy.notificationsOff, copy.enableNotifications);
+      }
+      return false;
+    }
+
+    await Notifications.cancelAllScheduledNotificationsAsync();
+
+    const now = Date.now();
+    let scheduled = 0;
+    for (let dayOffset = 0; dayOffset < REMINDER_DAYS_AHEAD; dayOffset += 1) {
+      const date = new Date();
+      date.setDate(date.getDate() + dayOffset);
+      const prayers = getPrayers(latitude, longitude, date);
+
+      for (const prayer of prayers) {
+        if (prayer.time.getTime() <= now + 15000) continue;
+
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: copy.prayerTitle(getPrayerLabel(prayer.name, language)),
+            body: copy.prayerBody(getPrayerLabel(prayer.name, language)),
+            sound: 'azan.mp3',
+            priority: Notifications.AndroidNotificationPriority.MAX,
+            data: { prayer: prayer.name },
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: prayer.time,
+            channelId: NOTIFICATION_CHANNEL_ID,
+          },
+        });
+        scheduled += 1;
+      }
+    }
+
+    if (scheduled === 0) {
+      if (promptOnFailure) {
+        Alert.alert(copy.remindersFailed, copy.remindersFailedBody);
+      }
+      return false;
+    }
+
+    return true;
+  } catch {
+    if (promptOnFailure) {
+      Alert.alert(copy.remindersFailed, copy.remindersFailedBody);
+    }
+    return false;
   }
-  return true;
 }
 
 export default function App() {
@@ -240,7 +318,11 @@ export default function App() {
     loadLocation();
   }, []);
 
-  const prayers = useMemo(() => getPrayers(coordinates.latitude, coordinates.longitude), [coordinates]);
+  const todayKey = getLocalDateKey(now);
+  const prayers = useMemo(() => {
+    const [year, month, day] = todayKey.split('-').map(Number);
+    return getPrayers(coordinates.latitude, coordinates.longitude, new Date(year, month - 1, day, 12));
+  }, [coordinates.latitude, coordinates.longitude, todayKey]);
   const nextPrayer = prayers.find((prayer) => prayer.time.getTime() > now.getTime()) || prayers[0];
   const minutesUntil = Math.max(0, Math.round((nextPrayer.time.getTime() - now.getTime()) / 60000));
   const countdown = minutesUntil >= 60
@@ -248,13 +330,33 @@ export default function App() {
     : `${minutesUntil}m`;
   const dateLabel = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 
+  useEffect(() => {
+    let cancelled = false;
+
+    AsyncStorage.getItem(REMINDERS_STORAGE_KEY).then(async (saved) => {
+      if (cancelled || saved !== 'true') return;
+      setRemindersOn(true);
+      await enablePrayerReminders(coordinates.latitude, coordinates.longitude, language, {
+        promptOnFailure: false,
+      });
+    }).catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [coordinates.latitude, coordinates.longitude, language, todayKey]);
+
   async function toggleReminders() {
     if (remindersOn) {
       await Notifications.cancelAllScheduledNotificationsAsync();
+      await AsyncStorage.setItem(REMINDERS_STORAGE_KEY, 'false');
       setRemindersOn(false);
       return;
     }
-    const enabled = await enablePrayerReminders(prayers, language);
+    const enabled = await enablePrayerReminders(coordinates.latitude, coordinates.longitude, language);
+    if (enabled) {
+      await AsyncStorage.setItem(REMINDERS_STORAGE_KEY, 'true');
+    }
     setRemindersOn(enabled);
   }
 
