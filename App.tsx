@@ -15,6 +15,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Share,
   Text,
   TextInput,
   View,
@@ -36,6 +37,7 @@ type CompletedPrayers = Record<string, boolean>;
 type PrayerReminderPreferences = Record<PrayerName, boolean>;
 type PrayerTimeAdjustments = Record<PrayerName, number>;
 type MosqueSchedule = { mosqueName: string; times: Record<PrayerName, string> };
+type MonthlyTimetableDay = { date: Date; prayers: Prayer[] };
 type Language = 'en' | 'hi';
 
 const COPY = {
@@ -68,6 +70,10 @@ const COPY = {
     clearMosqueSchedule: 'Clear mosque schedule',
     notSet: 'Not set',
     save: 'Save',
+    monthlyTimetable: 'Monthly timetable',
+    shareTimetable: 'Share timetable',
+    previousMonth: 'Previous month',
+    nextMonth: 'Next month',
     companion: 'YOUR DAILY COMPANION', launchSubtitle: 'Prayer times, wherever you are', developed: 'DEVELOPED BY',
     finding: 'Finding your location', preparing: "Preparing today's prayer times", current: 'CURRENT LOCATION',
     unavailable: 'Location unavailable', update: 'UPDATE', chooseCity: 'Choose another city', next: 'NEXT PRAYER',
@@ -104,6 +110,10 @@ const COPY = {
     clearMosqueSchedule: 'मस्जिद का समय हटाएँ',
     notSet: 'नहीं दिया गया',
     save: 'सहेजें',
+    monthlyTimetable: 'महीने का नमाज़ समय',
+    shareTimetable: 'समय साझा करें',
+    previousMonth: 'पिछला महीना',
+    nextMonth: 'अगला महीना',
     qibla: 'क़िबला दिशा',
     qiblaBearingLabel: 'उत्तर से दिशा',
     qiblaCompassHint: 'फ़ोन का ऊपरी हिस्सा तीर की दिशा में रखें',
@@ -179,6 +189,10 @@ function getPrayerDescription(name: string, language: Language) {
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatCompactTime(date: Date) {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function normalizeClockTime(value: string) {
@@ -408,6 +422,11 @@ export default function App() {
   const [mosqueSchedule, setMosqueSchedule] = useState(EMPTY_MOSQUE_SCHEDULE);
   const [mosqueScheduleDraft, setMosqueScheduleDraft] = useState(EMPTY_MOSQUE_SCHEDULE);
   const [mosqueScheduleOpen, setMosqueScheduleOpen] = useState(false);
+  const [monthlyTimetableOpen, setMonthlyTimetableOpen] = useState(false);
+  const [displayMonth, setDisplayMonth] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
   const [completedPrayers, setCompletedPrayers] = useState<CompletedPrayers>({});
   const [showCompletionMessage, setShowCompletionMessage] = useState(false);
   const [showLaunchScreen, setShowLaunchScreen] = useState(true);
@@ -588,6 +607,15 @@ export default function App() {
     const [year, month, day] = todayKey.split('-').map(Number);
     return getPrayers(coordinates.latitude, coordinates.longitude, new Date(year, month - 1, day, 12), prayerTimeAdjustments);
   }, [coordinates.latitude, coordinates.longitude, todayKey, prayerTimeAdjustments]);
+  const monthlyDays = useMemo<MonthlyTimetableDay[]>(() => {
+    const year = displayMonth.getFullYear();
+    const month = displayMonth.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, index) => {
+      const date = new Date(year, month, index + 1, 12);
+      return { date, prayers: getPrayers(coordinates.latitude, coordinates.longitude, date, prayerTimeAdjustments) };
+    });
+  }, [coordinates.latitude, coordinates.longitude, displayMonth, prayerTimeAdjustments]);
   const nextPrayer = prayers.find((prayer) => prayer.time.getTime() > now.getTime()) || prayers[0];
   const minutesUntil = Math.max(0, Math.round((nextPrayer.time.getTime() - now.getTime()) / 60000));
   const countdown = minutesUntil >= 60
@@ -596,6 +624,20 @@ export default function App() {
   const dateLabel = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
   const qiblaBearing = getQiblaBearing(coordinates.latitude, coordinates.longitude);
   const compassRotation = qiblaBearing - (compassHeading ?? 0);
+  const monthLabel = displayMonth.toLocaleDateString(language === 'hi' ? 'hi-IN' : 'en', { month: 'long', year: 'numeric' });
+
+  async function shareMonthlyTimetable() {
+    const locale = language === 'hi' ? 'hi-IN' : 'en';
+    const title = `${copy.monthlyTimetable} — ${monthLabel}`;
+    const rows = monthlyDays.map(({ date, prayers: dayPrayers }) =>
+      `${date.toLocaleDateString(locale, { weekday: 'short', month: 'short', day: 'numeric' })}: ${dayPrayers.map((prayer) => `${getPrayerLabel(prayer.name, language)} ${formatTime(prayer.time)}`).join(' | ')}`,
+    );
+    try {
+      await Share.share({ title, message: [title, city, '', ...rows].join('\n') });
+    } catch {
+      Alert.alert(copy.monthlyTimetable, copy.shareTimetable);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -815,6 +857,18 @@ export default function App() {
           </View>
         </View>
 
+        <Pressable
+          accessibilityRole="button"
+          style={styles.monthlyTimetableButton}
+          onPress={() => {
+            setDisplayMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+            setMonthlyTimetableOpen(true);
+          }}
+        >
+          <Text style={styles.monthlyTimetableButtonText}>{copy.monthlyTimetable}</Text>
+          <Text style={styles.monthlyTimetableArrow}>›</Text>
+        </Pressable>
+
         <Text style={styles.mosqueNote}>{copy.mosqueNote}</Text>
 
         <View style={styles.sectionHeading}>
@@ -910,6 +964,45 @@ export default function App() {
           <Text style={styles.creditText}>Developed by MD Faiyazuddin</Text>
         </View>
       </ScrollView>
+      <Modal visible={monthlyTimetableOpen} transparent animationType="slide" onRequestClose={() => setMonthlyTimetableOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.monthlyModal}>
+            <View style={styles.modalHeader}>
+              <View style={styles.adjustmentsHeaderCopy}>
+                <Text style={styles.modalTitle}>{copy.monthlyTimetable}</Text>
+                <Text style={styles.modalSubtitle}>{city}</Text>
+              </View>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => setMonthlyTimetableOpen(false)}>
+                <Text style={styles.closeButton}>X</Text>
+              </Pressable>
+            </View>
+            <View style={styles.monthSelector}>
+              <Pressable accessibilityRole="button" accessibilityLabel={copy.previousMonth} style={styles.monthNavButton} onPress={() => setDisplayMonth((month) => new Date(month.getFullYear(), month.getMonth() - 1, 1))}>
+                <Text style={styles.monthNavText}>‹</Text>
+              </Pressable>
+              <Text style={styles.monthLabel}>{monthLabel}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={copy.nextMonth} style={styles.monthNavButton} onPress={() => setDisplayMonth((month) => new Date(month.getFullYear(), month.getMonth() + 1, 1))}>
+                <Text style={styles.monthNavText}>›</Text>
+              </Pressable>
+            </View>
+            <View style={styles.timetableHeaderRow}>
+              <Text style={styles.timetableDayCell}>Date</Text>
+              {['Fajr', 'Dhu', 'Asr', 'Magh', 'Isha'].map((name) => <Text key={name} style={styles.timetablePrayerHeader}>{name}</Text>)}
+            </View>
+            <ScrollView style={styles.timetableScroll} contentContainerStyle={styles.timetableRows}>
+              {monthlyDays.map(({ date, prayers: dayPrayers }) => (
+                <View key={date.toISOString()} style={styles.timetableRow}>
+                  <Text style={styles.timetableDayCell}>{date.getDate()}</Text>
+                  {dayPrayers.map((prayer) => <Text key={prayer.name} style={styles.timetablePrayerTime}>{formatCompactTime(prayer.time)}</Text>)}
+                </View>
+              ))}
+            </ScrollView>
+            <Pressable accessibilityRole="button" style={styles.shareTimetableButton} onPress={shareMonthlyTimetable}>
+              <Text style={styles.shareTimetableText}>{copy.shareTimetable}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
       <Modal visible={mosqueScheduleOpen} transparent animationType="slide" onRequestClose={() => setMosqueScheduleOpen(false)}>
         <View style={styles.modalBackdrop}>
           <KeyboardAvoidingView style={styles.keyboardAvoiding} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -1113,6 +1206,23 @@ const styles = StyleSheet.create({
   qiblaSubtitle: { color: '#dbe6dc', fontSize: 11, marginTop: 1 },
   qiblaHint: { color: '#9bb5a7', fontSize: 10, lineHeight: 14, marginTop: 4 },
   qiblaLocation: { color: '#85a198', fontSize: 10, marginTop: 5 },
+  monthlyTimetableButton: { backgroundColor: '#1b3b38', borderWidth: 1, borderColor: '#41635c', borderRadius: 12, minHeight: 46, paddingHorizontal: 15, marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  monthlyTimetableButtonText: { color: '#f4c96d', fontSize: 13, fontWeight: '700' },
+  monthlyTimetableArrow: { color: '#f4c96d', fontSize: 23, lineHeight: 24 },
+  monthlyModal: { backgroundColor: '#173c37', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '90%', paddingHorizontal: 16, paddingTop: 22, paddingBottom: 20 },
+  monthSelector: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  monthNavButton: { width: 42, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#244a43' },
+  monthNavText: { color: '#f4c96d', fontSize: 25, lineHeight: 28, fontWeight: '700' },
+  monthLabel: { color: '#f5f1e6', fontSize: 17, fontWeight: '700' },
+  timetableHeaderRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#56806f' },
+  timetableDayCell: { width: 38, color: '#9bb5a7', fontSize: 9, fontWeight: '800', textAlign: 'center' },
+  timetablePrayerHeader: { flex: 1, color: '#9bb5a7', fontSize: 9, fontWeight: '800', textAlign: 'center' },
+  timetableScroll: { flex: 1 },
+  timetableRows: { paddingBottom: 10 },
+  timetableRow: { flexDirection: 'row', alignItems: 'center', minHeight: 35, borderBottomWidth: 1, borderBottomColor: '#284945' },
+  timetablePrayerTime: { flex: 1, color: '#dbe6dc', fontSize: 10, fontWeight: '600', textAlign: 'center', fontVariant: ['tabular-nums'] },
+  shareTimetableButton: { minHeight: 48, borderRadius: 12, backgroundColor: '#e2b65e', alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  shareTimetableText: { color: '#173c37', fontSize: 14, fontWeight: '800' },
   compassDial: { width: 92, height: 92, borderRadius: 46, borderWidth: 1, borderColor: '#56806f', alignItems: 'center', justifyContent: 'center', backgroundColor: '#173c37' },
   compassNorth: { position: 'absolute', top: 5, color: '#f4c96d', fontSize: 9, fontWeight: '900' },
   compassEast: { position: 'absolute', right: 7, color: '#9bb5a7', fontSize: 8, fontWeight: '700' },
